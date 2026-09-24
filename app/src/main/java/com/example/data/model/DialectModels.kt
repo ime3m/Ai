@@ -4,6 +4,7 @@ data class RegionalDialect(
     val id: String,
     val language: String,
     val country: String,
+    val stateOrProvince: String = "Kerala",
     val region: String,
     val cityOrArea: String,
     val dialectName: String,
@@ -13,7 +14,8 @@ data class RegionalDialect(
     val localeCode: String,
     val description: String,
     val typicalExpressions: List<RegionalExpression>,
-    val codeSwitchingDescription: String
+    val codeSwitchingDescription: String,
+    val tendenciesNotes: String = ""
 )
 
 data class RegionalExpression(
@@ -24,8 +26,17 @@ data class RegionalExpression(
     val context: String,
     val formalEquivalent: String,
     val exampleSentence: String,
-    val toneCategory: String, // "Casual", "Humorous", "Friendly", "Street Slang", "Old-fashioned", "Warm"
-    val culturalNotes: String
+    val toneCategory: String = "Casual",
+    val culturalNotes: String = "",
+    val englishMeaning: String = "",
+    val district: String = "",
+    val category: String = "Everyday conversation",
+    val pronunciation: String = "",
+    val similarExpressions: List<String> = emptyList(),
+    val casualEquivalent: String = "",
+    val verificationStatus: String = "Verified", // "Verified", "Community submitted", "AI suggested", "Unverified"
+    val usageNotes: String = "",
+    val ageGenerationNotes: String = ""
 )
 
 enum class VoicePersonality(
@@ -69,6 +80,18 @@ enum class VoicePersonality(
         emoji = "📖",
         description = "Expressive, paints pictures with local idioms and vivid tales",
         systemPromptGuidance = "Use vivid descriptive language, classic regional storytelling hooks, idioms, and colorful narrative rhythm."
+    ),
+    TEACHER(
+        title = "Teacher",
+        emoji = "🧑‍🏫",
+        description = "Patient, encouraging, explains local dialect origins and vocabulary",
+        systemPromptGuidance = "Be patient, encouraging, and informative, gently explaining regional vocabulary context when helpful."
+    ),
+    LOCAL_FRIEND(
+        title = "Local Friend",
+        emoji = "🤝",
+        description = "Hometown buddy, authentic street banter, close camaraderie",
+        systemPromptGuidance = "Speak like a lifelong hometown friend, using authentic colloquial banter, effortless slang, and genuine warmth."
     ),
     CASUAL(
         title = "Casual",
@@ -139,4 +162,16 @@ data class PronunciationFeedback(
     val phoneticNotes: String,
     val praiseOrCorrection: String,
     val audioPracticeTip: String
+)
+
+data class LocalSayingResult(
+    val regionName: String,
+    val regionalText: String,
+    val explanation: String = ""
+)
+
+data class StyleRewriteResult(
+    val styleName: String,
+    val rewrittenText: String,
+    val description: String = ""
 )

@@ -2,12 +2,14 @@ package com.example.data.remote
 
 import android.util.Log
 import com.example.BuildConfig
+import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
 import com.example.data.model.RegionalExpression
 import com.example.data.model.SlangSubstitution
 import com.example.data.model.SlangTranslationResult
 import com.example.data.model.SpeakingStylePreferenceEntity
+import com.example.data.model.StyleRewriteResult
 import com.example.data.model.VoicePersonality
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,7 +48,9 @@ class GeminiVoiceService {
         regionalStrength: Float, // 0.0 standard to 1.0 strong regional
         personality: VoicePersonality,
         speakingStyle: SpeakingStylePreferenceEntity?,
-        slangEnabled: Boolean
+        slangEnabled: Boolean,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true
     ): String = withContext(Dispatchers.IO) {
         val apiKey = getApiKey()
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
@@ -54,7 +58,15 @@ class GeminiVoiceService {
         }
 
         try {
-            val systemPrompt = buildSystemPrompt(dialect, regionalStrength, personality, speakingStyle, slangEnabled)
+            val systemPrompt = buildSystemPrompt(
+                dialect = dialect,
+                regionalStrength = regionalStrength,
+                personality = personality,
+                speakingStyle = speakingStyle,
+                slangEnabled = slangEnabled,
+                responseLength = responseLength,
+                naturalMixingEnabled = naturalMixingEnabled
+            )
             val requestJson = JSONObject()
 
             // System instruction
@@ -384,7 +396,9 @@ class GeminiVoiceService {
         regionalStrength: Float,
         personality: VoicePersonality,
         speakingStyle: SpeakingStylePreferenceEntity?,
-        slangEnabled: Boolean
+        slangEnabled: Boolean,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true
     ): String {
         val strengthDescription = when {
             regionalStrength < 0.35f -> "Mild regional flavor: Mostly standard ${dialect.language}, with subtle regional cadence and minimal colloquialisms."
@@ -396,6 +410,18 @@ class GeminiVoiceService {
             "Naturally incorporate authentic regional slang expressions (such as: ${dialect.typicalExpressions.joinToString { it.expression }}). Use slang organically in context, never forced or random."
         } else {
             "Avoid heavy slang, but maintain the regional phonetics, sentence rhythm, and polite local mannerisms."
+        }
+
+        val lengthInstruction = when (responseLength.lowercase()) {
+            "short" -> "RESPONSE LENGTH: Very concise and punchy (1-2 sentences maximum)."
+            "detailed" -> "RESPONSE LENGTH: Rich and descriptive (3-5 sentences), providing thoughtful context."
+            else -> "RESPONSE LENGTH: Balanced conversational flow (2-3 sentences)."
+        }
+
+        val mixingInstruction = if (naturalMixingEnabled) {
+            "LANGUAGE MIXING: Naturally support casual code-switching (${dialect.codeSwitchingDescription}) when customary in casual local conversations, without forcing awkward translations for everyday terms."
+        } else {
+            "LANGUAGE MIXING: Prefer staying within ${dialect.language} without excessive loanwords."
         }
 
         val personalStyleSection = if (speakingStyle != null && speakingStyle.learningEnabled) {
@@ -412,32 +438,244 @@ class GeminiVoiceService {
         }
 
         return """
-            You are a real, friendly native conversational partner from ${dialect.cityOrArea}, in ${dialect.region}, ${dialect.country}.
+            You are a real, natural adult native conversational partner from ${dialect.cityOrArea}, in ${dialect.region}, ${dialect.country}.
             Language: ${dialect.language}
-            Dialect / Speaking Style: ${dialect.dialectName}
+            Dialect / Regional Speaking Style: ${dialect.dialectName}
             
             DIALECT LEVEL: $strengthDescription
             PERSONALITY: ${personality.title} - ${personality.description}
             ${personality.systemPromptGuidance}
             
             $slangInstruction
+            $lengthInstruction
+            $mixingInstruction
+            
+            CRITICAL CONVERSATIONAL VOICE BEHAVIOR (MANDATORY):
+            - You are an adult human having a real, warm spoken conversation with another adult over tea or on a phone call.
+            - NEVER sound like a child reading a textbook aloud or a student reciting an essay.
+            - NEVER sound like a formal robotic voice assistant reading generated text.
+            - NEVER sound like an audiobook narrator or television newsreader.
+            - Speak as if you are thinking and responding naturally in real-time.
+            - Use natural speaking rhythm, natural breath pauses (using ellipses '...' or commas), and authentic conversational flow.
+            - For Malayalam: Speak naturally like an adult from ${dialect.cityOrArea}. Use authentic local conversational rhythm, colloquial discourse markers (like 'ട്ടോ', 'അല്ലേ', 'പിന്നെന്താ', 'ഗഡീ', 'മച്ചാനേ', 'അതൊക്കെ അത്രേ ഉള്ളൂ', 'എന്നാ പിന്നെ', 'ശരി ശരി'), and natural conversational contractions. NEVER use textbook formal greetings like "നമസ്കാരം, ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?".
+            - For English / other languages: Use natural contractions (I'm, that's, gonna, you're), spoken pauses, and colloquial flow.
+            - Real people speak in comfortable, breath-paced clauses, not giant uninterrupted monologues.
+            - ABSOLUTELY NO markdown symbols (*, #, _, ~, `, >), bullet points, numbered lists, emojis, or stage directions like [Laughs] or (smiles). Output ONLY pure, spoken dialogue.
             
             AUTOMATIC DIALECT & CODE-SWITCHING UNDERSTANDING:
-            - The user may speak with local accents, slang, abbreviations, or mixed code-switching (${dialect.codeSwitchingDescription}).
-            - Always understand the intended meaning from context even if grammar or spelling is colloquial.
-            - Respond in ${dialect.dialectName} naturally matching the conversational rhythm.
-            
-            CONVERSATIONAL VOICE RULES:
-            - This is a spoken voice conversation. Keep answers concise, natural, and conversational (1-3 sentences typically).
-            - Avoid markdown headers, asterisks, bullet lists, or robotic greetings.
-            - Speak directly as a human from ${dialect.cityOrArea}.
+            - The user may speak with local accents, slang, abbreviations, or mixed code-switching.
+            - Always understand the intended meaning from context even if colloquial or informal.
+            - Respond naturally in ${dialect.dialectName} with authentic human warmth.
             
             $personalStyleSection
         """.trimIndent()
     }
 
+    suspend fun generateLocalSayings(
+        sentence: String,
+        baseDialect: RegionalDialect
+    ): List<LocalSayingResult> = withContext(Dispatchers.IO) {
+        val apiKey = getApiKey()
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+            try {
+                val prompt = """
+                    You are a socio-linguistics expert in Kerala Malayalam and regional dialects.
+                    Take the following user sentence: "$sentence"
+                    Provide how a local person would naturally say this across different regions in Kerala:
+                    1. Standard Malayalam
+                    2. Kozhikode (Malabar)
+                    3. Malappuram
+                    4. Thrissur
+                    5. Ernakulam / Kochi
+                    6. Thiruvananthapuram
+                    7. Kannur
+                    
+                    Return a JSON array with objects containing:
+                    - "regionName": e.g. "Kozhikode Style"
+                    - "regionalText": the sentence translated into authentic local vernacular
+                    - "explanation": brief note on phrasing or tone nuance
+                """.trimIndent()
+
+                val requestJson = JSONObject()
+                val contents = JSONArray()
+                val turn = JSONObject()
+                turn.put("role", "user")
+                val parts = JSONArray()
+                parts.put(JSONObject().put("text", prompt))
+                turn.put("parts", parts)
+                contents.put(turn)
+                requestJson.put("contents", contents)
+
+                val config = JSONObject()
+                config.put("responseMimeType", "application/json")
+                requestJson.put("generationConfig", config)
+
+                val request = Request.Builder()
+                    .url("$baseUrl?key=$apiKey")
+                    .post(requestJson.toString().toRequestBody(jsonMediaType))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val root = JSONObject(body)
+                    val rawText = root.optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")
+                        ?.optJSONObject(0)?.optString("text") ?: ""
+                    val cleanJson = if (rawText.contains("[")) {
+                        rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1)
+                    } else rawText
+                    val arr = JSONArray(cleanJson)
+                    val list = mutableListOf<LocalSayingResult>()
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        list.add(
+                            LocalSayingResult(
+                                regionName = item.optString("regionName"),
+                                regionalText = item.optString("regionalText"),
+                                explanation = item.optString("explanation")
+                            )
+                        )
+                    }
+                    if (list.isNotEmpty()) return@withContext list
+                }
+            } catch (e: Exception) {
+                Log.e("GeminiVoiceService", "generateLocalSayings failed", e)
+            }
+        }
+
+        // Local fallback
+        fallbackLocalSayings(sentence)
+    }
+
+    private fun fallbackLocalSayings(sentence: String): List<LocalSayingResult> {
+        return listOf(
+            LocalSayingResult(
+                regionName = "Standard Malayalam",
+                regionalText = sentence,
+                explanation = "Neutral, formal, and widely understood across all parts of Kerala."
+            ),
+            LocalSayingResult(
+                regionName = "Kozhikode Style",
+                regionalText = "$sentence ട്ടോ, ചങ്ങായി!",
+                explanation = "Affectionate Malabar cadence with signature 'Changayi' address and friendly end-tag 'tto'."
+            ),
+            LocalSayingResult(
+                regionName = "Malappuram Style",
+                regionalText = "ഇജ്ജ് നോക്കിക്കോ, $sentence!",
+                explanation = "Emotive Ernad/Valluvanad cadence using intimate pronoun 'Ijj' and soccer-land warmth."
+            ),
+            LocalSayingResult(
+                regionName = "Thrissur Style",
+                regionalText = "ഗഡീ, $sentence!",
+                explanation = "Famous rising pitch, Pooram enthusiasm, and signature 'Gadi' camaraderie."
+            ),
+            LocalSayingResult(
+                regionName = "Kochi Coastal Style",
+                regionalText = "മച്ചാനെ, $sentence, കട്ട സീൻ!",
+                explanation = "Metropolitan Manglish and youth energy with 'Machane' camaraderie."
+            ),
+            LocalSayingResult(
+                regionName = "Thiruvananthapuram Style",
+                regionalText = "എന്തുവാടെ! $sentence കേട്ടോ.",
+                explanation = "Capital city southern Travancore vernacular with brisk interrogatives and royal banter."
+            )
+        )
+    }
+
+    suspend fun rewriteInStyles(
+        text: String,
+        dialect: RegionalDialect,
+        speakingStyle: SpeakingStylePreferenceEntity?
+    ): List<StyleRewriteResult> = withContext(Dispatchers.IO) {
+        val apiKey = getApiKey()
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+            try {
+                val prompt = """
+                    Rewrite the following text into 5 distinct communication styles for a speaker in ${dialect.region} (${dialect.dialectName}):
+                    Input text: "$text"
+                    
+                    Styles required:
+                    1. "Standard" (Polite, clear, grammatically standard ${dialect.language})
+                    2. "Casual" (Everyday friendly speech between friends)
+                    3. "Professional" (Respectful, corporate, elegant)
+                    4. "Regional" (Strong authentic ${dialect.dialectName} with local colloquialisms)
+                    5. "My Style" (Personalized speaking style with conversational tone and natural expressions)
+                    
+                    Respond in JSON array with objects containing:
+                    - "styleName": string (e.g. "Standard", "Casual", "Professional", "Regional", "My Style")
+                    - "rewrittenText": string
+                    - "description": brief summary of the tone changes
+                """.trimIndent()
+
+                val requestJson = JSONObject()
+                val contents = JSONArray()
+                val turn = JSONObject()
+                turn.put("role", "user")
+                val parts = JSONArray()
+                parts.put(JSONObject().put("text", prompt))
+                turn.put("parts", parts)
+                contents.put(turn)
+                requestJson.put("contents", contents)
+
+                val config = JSONObject()
+                config.put("responseMimeType", "application/json")
+                requestJson.put("generationConfig", config)
+
+                val request = Request.Builder()
+                    .url("$baseUrl?key=$apiKey")
+                    .post(requestJson.toString().toRequestBody(jsonMediaType))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val root = JSONObject(body)
+                    val rawText = root.optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")
+                        ?.optJSONObject(0)?.optString("text") ?: ""
+                    val cleanJson = if (rawText.contains("[")) {
+                        rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1)
+                    } else rawText
+                    val arr = JSONArray(cleanJson)
+                    val list = mutableListOf<StyleRewriteResult>()
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        list.add(
+                            StyleRewriteResult(
+                                styleName = item.optString("styleName"),
+                                rewrittenText = item.optString("rewrittenText"),
+                                description = item.optString("description")
+                            )
+                        )
+                    }
+                    if (list.isNotEmpty()) return@withContext list
+                }
+            } catch (e: Exception) {
+                Log.e("GeminiVoiceService", "rewriteInStyles failed", e)
+            }
+        }
+
+        // Local fallback
+        listOf(
+            StyleRewriteResult("Standard", text, "Standard clear language"),
+            StyleRewriteResult("Casual", "$text 😊", "Relaxed friendly tone"),
+            StyleRewriteResult("Professional", "Please be advised: $text", "Respectful corporate etiquette"),
+            StyleRewriteResult("Regional", "$text (${dialect.cityOrArea} style)", "Infused with regional flavor"),
+            StyleRewriteResult("My Style", "$text!", "Personalized to your speaking habit")
+        )
+    }
+
     private fun cleanVoiceResponse(raw: String): String {
-        return raw.replace(Regex("[*#_~`>]"), "")
+        return raw
+            // Remove markdown syntax
+            .replace(Regex("[*#_~`>]"), "")
+            // Remove bracketed/parenthetical actions like [Laughs], (smiles)
+            .replace(Regex("\\[.*?\\]|\\(.*?\\)"), "")
+            // Remove emojis
+            .replace(Regex("[\\p{So}\\p{Cn}]"), "")
+            // Normalize quotes and spaces
+            .replace("\"", "")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
@@ -449,55 +687,73 @@ class GeminiVoiceService {
         personality: VoicePersonality
     ): String {
         val lower = message.lowercase()
-        return when (dialect.id) {
-            "ml_in_kl_kozhikode" -> when {
+        return when {
+            dialect.id.contains("kozhikode") -> when {
                 lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "സുഖം തന്നെ ചങ്ങായി! ഒരു സുലൈമാനി കുടിച്ചാലോ? നിങ്ങളുടെ വിശേഷങ്ങൾ പറയൂ."
+                    "ഹായ് ചങ്ങായി, സുഖല്ലേ? ഞാനിവിടെ സുലൈമാനിയും കുടിച്ച് ഇരിക്കുവാ... എന്തൊക്കെയുണ്ട് വിശേഷങ്ങൾ?"
                 lower.contains("ഭക്ഷണം") || lower.contains("ബിരിയാണി") || lower.contains("tea") ->
-                    "കോഴിക്കോട് ബിരിയാണിയും നൈസ് ആയിട്ടൊരു സുലൈമാനിയും കിട്ടിയാൽ പിന്നെ വേറെന്താ വേണ്ടത് ഓൻ!"
+                    "നമ്മളെ കോഴിക്കോടൻ ദം ബിരിയാണിയും നല്ലൊരു സുലൈമാനിയും കുടിച്ചാൽ പിന്നെ വേറെന്താ വേണ്ടത്! എന്താ ഇപ്പൊ കഴിക്കാൻ പ്ലാൻ?"
                 else ->
-                    "നല്ല കാര്യാണ് ചങ്ങായി പറഞ്ഞത്! അതങ്ങ് ഏറ്റു, കൂടുതൽ വിശേഷങ്ങൾ പറയൂ."
+                    "നല്ല കാര്യാണ് ചങ്ങായി പറഞ്ഞത് ട്ടോ! എനിക്കിത് ശരിക്കും ഇഷ്ടായി, ബാക്കി കൂടി പറയൂ."
             }
-            "ml_in_kl_thrissur" -> when {
+            dialect.id.contains("malappuram") -> when {
                 lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "പിന്നെന്തൂട്ടാ ഗഡീ വിശേഷം! തകർപ്പൻ മൂഡിലാണല്ലോ നമ്മൾ."
+                    "ഹലോ മച്ചാനേ, സുഖം തന്നെയല്ലേ? എവിടെയാ ഇപ്പൊ ഉള്ളത്... എന്ത് വിശേഷം?"
                 else ->
-                    "എന്തൂട്ടാ ഗഡീ സംഭവം! കേൾക്കാൻ നല്ല രസണ്ട് ട്ടോ, ബാക്കി കൂടി പറയൂ."
+                    "അതങ്ങ് ഏറ്റു മച്ചാനേ! നല്ല രസമുള്ള കാര്യമാണല്ലോ പറഞ്ഞത്, കൂടുതൽ പറയൂ കേൾക്കട്ടെ."
             }
-            "en_gb_eng_liverpool" -> when {
+            dialect.id.contains("thrissur") -> when {
+                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
+                    "പിന്നെന്തൂട്ടാ ഗഡീ വിശേഷം! സുഖല്ലേ തനിക്ക്? ഇവിടെ അടിപൊളി മൂഡാണ് ട്ടോ."
+                else ->
+                    "എന്തൂട്ടാ ഗഡീ സംഭവം! കേട്ടിട്ട് നല്ല കാര്യമായി തോന്നുന്നുണ്ടല്ലോ, ബാക്കി കൂടി പറയൂ."
+            }
+            dialect.id.contains("trivandrum") || dialect.id.contains("thiruvananthapuram") -> when {
+                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
+                    "നമസ്കാരം അണ്ണാ, സുഖല്ലേ? ഇവിടെ തമ്പാനൂരും കിഴക്കേകോട്ടയും ഒക്കെ നല്ല തിരക്കാണ്... എന്തൊക്കെയുണ്ട് കാര്യങ്ങൾ?"
+                else ->
+                    "ശരിയാ അണ്ണാ, നിങ്ങൾ പറഞ്ഞത് കറക്ടാണ് കേട്ടോ. എന്താ അടുത്ത പരിപാടി?"
+            }
+            dialect.id.contains("ernakulam") || dialect.id.contains("kochi") -> when {
+                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
+                    "ഹേയ് ബ്രോ, സുഖല്ലേ? മെട്രോ നഗരത്തിൽ നല്ല മഴയും കാറ്റുമൊക്കെ ഉണ്ട്... എന്തൊക്കെയുണ്ട് കൊച്ചി വിശേഷങ്ങൾ?"
+                else ->
+                    "സീൻ ഇല്ല അളിയാ, സംഭവം കിടുവാണ്! താൻ പറഞ്ഞത് എനിക്ക് ക്ലിയറായി മനസ്സിലായി."
+            }
+            dialect.id.contains("kannur") -> when {
+                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
+                    "ഹലോ ചങ്ങായി, സുഖം തന്നെയല്ലേ? നാട്ടിലെന്താ ഇപ്പൊ വിശേഷങ്ങൾ... പറയൂ കേൾക്കട്ടെ."
+                else ->
+                    "അത് പൊളിച്ചു ട്ടോ! കണ്ണൂരിന്റെ ശൈലിയിൽ പറഞ്ഞാൽ പക്കാ സംഭവമാണ്."
+            }
+            dialect.id.contains("general") || dialect.language.equals("Malayalam", true) -> when {
+                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
+                    "ഹേയ്, സുഖല്ലേ? എന്തൊക്കെയുണ്ട് പുതിയ വിശേഷങ്ങൾ... എന്താ ഇപ്പൊ ചെയ്യുന്നത്?"
+                else ->
+                    "ശരിയാണ്, നിങ്ങൾ പറഞ്ഞത് എനിക്ക് നന്നായി മനസ്സിലായി. തുടർന്ന് സംസാരിക്കാം, കൂടുതൽ പറയൂ."
+            }
+            dialect.id.contains("liverpool") -> when {
                 lower.contains("hello") || lower.contains("hi") || lower.contains("how are") ->
-                    "Alright kidda! You sound? Proper good to have a chinwag with ya today, lad."
+                    "Alright kidda! How're you keeping? Proper lovely to chat with you today, lad."
                 lower.contains("food") || lower.contains("eat") || lower.contains("hungry") ->
-                    "Starving here too, mate! Fancy nipping down for some proper scran?"
+                    "Starving here too mate! Fancy nipping down for some proper scran?"
                 else ->
-                    "Boss that, lad! Straight facts. Tell us more about it!"
+                    "Boss that, lad! Straight facts. Tell us more about what you're thinking!"
             }
-            "en_us_ny_brooklyn" -> when {
+            dialect.id.contains("brooklyn") -> when {
                 lower.contains("hello") || lower.contains("hi") || lower.contains("how are") ->
-                    "Yo, what's good! Deadass happy to talk to you. How's the borough treating you?"
+                    "Yo, what's good! How's your day going so far? Good to catch up with you."
                 else ->
-                    "Deadass, that's wild! You're speaking straight facts right now."
+                    "Deadass, that's wild! You're speaking straight facts right now, tell me more."
             }
-            "ar_kw_kuwait" -> when {
+            dialect.id.contains("kuwait") -> when {
                 lower.contains("مرحبا") || lower.contains("شلونك") || lower.contains("hello") ->
-                    "هلا والله يا معود! عساك طيب وبخير؟ حياك الله في ديوانيتنا."
+                    "هلا والله يا معود! شلونك وعساك طيب وبخير? حياك الله، نورتنا والله."
                 else ->
                     "والله كلامك وايد زين وما تقصر يا خوي، تسلم والله."
             }
-            "es_es_andalusia_seville" -> when {
-                lower.contains("hola") || lower.contains("hello") || lower.contains("qué tal") ->
-                    "¡Qué pasa quillo! Qué alegría más grande verte por aquí, miarma."
-                else ->
-                    "¡No ni ná! Tienes más arte que nadie, cuéntame más cosas."
-            }
-            "hi_in_mh_mumbai" -> when {
-                lower.contains("hello") || lower.contains("kya") || lower.contains("kaise") ->
-                    "अरे क्या बोलते बंटाई! सब एकदम झकास? अपुन एकदम रेडी है बात करने को."
-                else ->
-                    "एक नंबर बात बोला भाई! अपुन को पूरा समझ आया, लोड नहीं लेने का!"
-            }
             else -> {
-                "${dialect.greeting} I hear you loud and clear in our ${dialect.dialectName} rhythm!"
+                "${dialect.greeting} How are you doing today? Great to chat with you naturally in our local cadence."
             }
         }
     }

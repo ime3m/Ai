@@ -2,30 +2,24 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary Electric Voice Palette
-val CyanPrimary = Color(0xFF0284C7)
-val CyanLight = Color(0xFF38BDF8)
-val CyanDark = Color(0xFF0369A1)
+// Minimal Sophisticated Monochrome & Neutral Palette
+val Neutral950 = Color(0xFF09090B)
+val Neutral900 = Color(0xFF121215)
+val Neutral800 = Color(0xFF27272A)
+val Neutral700 = Color(0xFF3F3F46)
+val Neutral500 = Color(0xFF71717A)
+val Neutral400 = Color(0xFFA1A1AA)
+val Neutral200 = Color(0xFFE4E4E7)
+val Neutral100 = Color(0xFFF4F4F5)
+val Neutral50 = Color(0xFFFBFBFB)
 
-// Dialect Accent Colors
-val VioletAccent = Color(0xFF8B5CF6)
-val IndigoVocal = Color(0xFF6366F1)
-val CoralSlang = Color(0xFFF43F5E)
-val EmeraldSpeech = Color(0xFF10B981)
-val AmberDialect = Color(0xFFF59E0B)
+// Subtle single accent: Deep Slate Indigo Focus
+val AccentPrimaryLight = Color(0xFF18181B)
+val AccentPrimaryDark = Color(0xFFF4F4F5)
+val AccentFocus = Color(0xFF2563EB)
 
-// Dark Theme Surfaces
-val DarkBg = Color(0xFF0B1120)
-val DarkSurface = Color(0xFF131D31)
-val DarkCard = Color(0xFF1E293B)
-val DarkBorder = Color(0xFF334155)
-val TextPrimaryDark = Color(0xFFF8FAFC)
-val TextSecondaryDark = Color(0xFF94A3B8)
-
-// Light Theme Surfaces
-val LightBg = Color(0xFFF8FAFC)
-val LightSurface = Color(0xFFFFFFFF)
-val LightCard = Color(0xFFF1F5F9)
-val LightBorder = Color(0xFFE2E8F0)
-val TextPrimaryLight = Color(0xFF0F172A)
-val TextSecondaryLight = Color(0xFF64748B)
+// Backward compatibility references for existing components
+val CyanPrimary = AccentPrimaryLight
+val CyanLight = AccentPrimaryDark
+val CyanDark = Neutral800
+val VioletAccent = Neutral700

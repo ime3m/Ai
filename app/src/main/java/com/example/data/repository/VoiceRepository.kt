@@ -3,11 +3,13 @@ package com.example.data.repository
 import com.example.data.local.VoiceDao
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.DictionaryEntryEntity
+import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
 import com.example.data.model.RegionalExpression
 import com.example.data.model.SlangTranslationResult
 import com.example.data.model.SpeakingStylePreferenceEntity
+import com.example.data.model.StyleRewriteResult
 import com.example.data.model.VoicePersonality
 import com.example.data.model.VoiceProfileEntity
 import com.example.data.remote.GeminiVoiceService
@@ -93,12 +95,16 @@ class VoiceRepository(
                         DictionaryEntryEntity(
                             expression = expr.expression,
                             meaning = expr.meaning,
+                            englishMeaning = expr.englishMeaning,
                             region = expr.region,
+                            district = expr.district,
                             exampleSentence = expr.exampleSentence,
                             formalEquivalent = expr.formalEquivalent,
-                            category = expr.toneCategory,
+                            category = expr.category,
+                            pronunciation = expr.pronunciation,
+                            similarExpressionsCsv = expr.similarExpressions.joinToString(", "),
                             isUserContributed = false,
-                            status = "Verified"
+                            status = expr.verificationStatus
                         )
                     )
                 }
@@ -215,7 +221,9 @@ class VoiceRepository(
         dialect: RegionalDialect,
         strength: Float,
         personality: VoicePersonality,
-        slangEnabled: Boolean
+        slangEnabled: Boolean,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true
     ): String {
         val currentStyle = voiceDao.getSpeakingStyleSync()
         return geminiService.generateVoiceResponse(
@@ -225,7 +233,9 @@ class VoiceRepository(
             regionalStrength = strength,
             personality = personality,
             speakingStyle = currentStyle,
-            slangEnabled = slangEnabled
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled
         )
     }
 
@@ -250,5 +260,20 @@ class VoiceRepository(
         dialect: RegionalDialect
     ): PronunciationFeedback {
         return geminiService.evaluatePronunciation(targetPhrase, userSpeech, dialect)
+    }
+
+    suspend fun generateLocalSayings(
+        sentence: String,
+        baseDialect: RegionalDialect
+    ): List<LocalSayingResult> {
+        return geminiService.generateLocalSayings(sentence, baseDialect)
+    }
+
+    suspend fun rewriteInStyles(
+        text: String,
+        dialect: RegionalDialect
+    ): List<StyleRewriteResult> {
+        val currentStyle = voiceDao.getSpeakingStyleSync()
+        return geminiService.rewriteInStyles(text, dialect, currentStyle)
     }
 }

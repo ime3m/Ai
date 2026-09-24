@@ -12,51 +12,51 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CyanLight,
-    onPrimary = Color(0xFF00354E),
-    primaryContainer = CyanDark,
-    onPrimaryContainer = Color(0xFFCBE6FF),
-    secondary = VioletAccent,
-    onSecondary = Color(0xFF2E0065),
-    secondaryContainer = Color(0xFF4C1D95),
-    onSecondaryContainer = Color(0xFFEDE9FE),
-    tertiary = CoralSlang,
-    onTertiary = Color.White,
-    background = DarkBg,
-    onBackground = TextPrimaryDark,
-    surface = DarkSurface,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = DarkCard,
-    onSurfaceVariant = TextSecondaryDark,
-    outline = DarkBorder,
-    outlineVariant = Color(0xFF1E293B)
+    primary = AccentPrimaryDark,
+    onPrimary = Neutral950,
+    primaryContainer = Neutral800,
+    onPrimaryContainer = Neutral100,
+    secondary = Neutral400,
+    onSecondary = Neutral950,
+    secondaryContainer = Neutral800,
+    onSecondaryContainer = Neutral100,
+    tertiary = Neutral400,
+    onTertiary = Neutral950,
+    background = Neutral950,
+    onBackground = Color(0xFFFAFAFA),
+    surface = Neutral900,
+    onSurface = Color(0xFFFAFAFA),
+    surfaceVariant = Neutral800,
+    onSurfaceVariant = Neutral400,
+    outline = Neutral800,
+    outlineVariant = Neutral700
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = CyanPrimary,
+    primary = AccentPrimaryLight,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE0F2FE),
-    onPrimaryContainer = Color(0xFF0369A1),
-    secondary = VioletAccent,
+    primaryContainer = Neutral100,
+    onPrimaryContainer = Neutral900,
+    secondary = Neutral500,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEDE9FE),
-    onSecondaryContainer = Color(0xFF4C1D95),
-    tertiary = CoralSlang,
+    secondaryContainer = Neutral100,
+    onSecondaryContainer = Neutral900,
+    tertiary = Neutral700,
     onTertiary = Color.White,
-    background = LightBg,
-    onBackground = TextPrimaryLight,
-    surface = LightSurface,
-    onSurface = TextPrimaryLight,
-    surfaceVariant = LightCard,
-    onSurfaceVariant = TextSecondaryLight,
-    outline = LightBorder,
-    outlineVariant = Color(0xFFCBD5E1)
+    background = Neutral50,
+    onBackground = Neutral950,
+    surface = Color.White,
+    onSurface = Neutral950,
+    surfaceVariant = Neutral100,
+    onSurfaceVariant = Neutral500,
+    outline = Neutral200,
+    outlineVariant = Neutral100
 )
 
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Set false by default to showcase custom voice aesthetic
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {

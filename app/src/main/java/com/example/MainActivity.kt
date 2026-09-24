@@ -8,18 +8,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -35,19 +37,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.VoiceViewModel
+import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.DictionaryScreen
 import com.example.ui.screens.ExploreDialectsScreen
-import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.VoiceConversationScreen
 import com.example.ui.theme.MyApplicationTheme
 
 enum class AppDestination(val route: String, val label: String, val icon: ImageVector, val tag: String) {
-    HOME("home", "Home", Icons.Default.Home, "nav_home"),
-    VOICE("voice", "Voice", Icons.Default.Mic, "nav_voice"),
+    CHAT("chat", "Chat", Icons.AutoMirrored.Filled.Chat, "nav_chat"),
     EXPLORE("explore", "Explore", Icons.Default.Public, "nav_explore"),
     DICTIONARY("dictionary", "Dictionary", Icons.Default.Book, "nav_dictionary"),
     PROFILE("profile", "Profile", Icons.Default.Person, "nav_profile")
@@ -68,7 +70,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
     val context = LocalContext.current
-    var currentDestination by remember { mutableStateOf(AppDestination.HOME) }
+    var currentDestination by remember { mutableStateOf(AppDestination.CHAT) }
     val snackbarHostState = remember { SnackbarHostState() }
     val userNotice by viewModel.userFeedbackNotice.collectAsState()
 
@@ -103,8 +105,10 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             NavigationBar(
-                modifier = Modifier.testTag("main_bottom_nav"),
-                containerColor = MaterialTheme.colorScheme.surface
+                modifier = Modifier
+                    .testTag("main_bottom_nav"),
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp
             ) {
                 AppDestination.entries.forEach { destination ->
                     val isSelected = currentDestination == destination
@@ -117,7 +121,19 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
                                 contentDescription = destination.label
                             )
                         },
-                        label = { Text(destination.label) },
+                        label = {
+                            Text(
+                                text = destination.label,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
                         modifier = Modifier.testTag(destination.tag)
                     )
                 }
@@ -125,15 +141,8 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
         }
     ) { innerPadding ->
         when (currentDestination) {
-            AppDestination.HOME -> {
-                HomeScreen(
-                    viewModel = viewModel,
-                    onNavigateToVoice = { currentDestination = AppDestination.VOICE },
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            AppDestination.VOICE -> {
-                VoiceConversationScreen(
+            AppDestination.CHAT -> {
+                ChatScreen(
                     viewModel = viewModel,
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -141,7 +150,7 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
             AppDestination.EXPLORE -> {
                 ExploreDialectsScreen(
                     viewModel = viewModel,
-                    onStartVoiceChat = { currentDestination = AppDestination.VOICE },
+                    onStartVoiceChat = { currentDestination = AppDestination.CHAT },
                     modifier = Modifier.padding(innerPadding)
                 )
             }

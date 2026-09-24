@@ -3,17 +3,23 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audio.TranscriptConfirmationMode
+import com.example.audio.VoiceInputError
+import com.example.audio.VoiceInputMode
+import com.example.audio.VoiceInputSettings
 import com.example.audio.VoiceSpeechManager
 import com.example.audio.VoiceState
 import com.example.data.local.AppDatabase
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.ConversationMode
 import com.example.data.model.DictionaryEntryEntity
+import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
 import com.example.data.model.RegionalExpression
 import com.example.data.model.SlangTranslationResult
 import com.example.data.model.SpeakingStylePreferenceEntity
+import com.example.data.model.StyleRewriteResult
 import com.example.data.model.VoicePersonality
 import com.example.data.model.VoiceProfileEntity
 import com.example.data.remote.GeminiVoiceService
@@ -25,6 +31,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class InputMode {
+    VOICE, WRITE
+}
 
 data class SlangTranslationUiState(
     val inputText: String = "",
@@ -42,6 +52,18 @@ data class PracticeUiState(
     val isEvaluating: Boolean = false
 )
 
+data class LocalSayingsUiState(
+    val inputText: String = "",
+    val results: List<LocalSayingResult> = emptyList(),
+    val isLoading: Boolean = false
+)
+
+data class StyleRewriteUiState(
+    val inputText: String = "",
+    val results: List<StyleRewriteResult> = emptyList(),
+    val isRewriting: Boolean = false
+)
+
 class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getInstance(application)
@@ -52,7 +74,13 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     val voiceState: StateFlow<VoiceState> = speechManager.voiceState
     val soundLevel: StateFlow<Float> = speechManager.soundLevel
     val partialTranscript: StateFlow<String> = speechManager.partialTranscript
+    val lastFinalTranscript: StateFlow<String> = speechManager.lastFinalTranscript
+    val voiceError: StateFlow<VoiceInputError?> = speechManager.voiceError
+    val voiceSettings: StateFlow<VoiceInputSettings> = speechManager.voiceSettings
     val isMuted: StateFlow<Boolean> = speechManager.isMuted
+
+    private val _pendingReviewTranscript = MutableStateFlow<String?>(null)
+    val pendingReviewTranscript: StateFlow<String?> = _pendingReviewTranscript.asStateFlow()
 
     val allProfiles: StateFlow<List<VoiceProfileEntity>> = repository.allProfiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -93,6 +121,22 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val _practiceState = MutableStateFlow(PracticeUiState())
     val practiceState: StateFlow<PracticeUiState> = _practiceState.asStateFlow()
 
+    private val _inputMode = MutableStateFlow(InputMode.VOICE)
+    val inputMode: StateFlow<InputMode> = _inputMode.asStateFlow()
+
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
+
+    private val _localSayingsState = MutableStateFlow(
+        LocalSayingsUiState(inputText = "നമുക്ക് ചായ കുടിക്കാൻ പോകാം")
+    )
+    val localSayingsState: StateFlow<LocalSayingsUiState> = _localSayingsState.asStateFlow()
+
+    private val _styleRewriteState = MutableStateFlow(
+        StyleRewriteUiState(inputText = "നാളെ കാണാം")
+    )
+    val styleRewriteState: StateFlow<StyleRewriteUiState> = _styleRewriteState.asStateFlow()
+
     init {
         viewModelScope.launch {
             repository.initializeDefaultsIfNeeded()
@@ -111,7 +155,11 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
         // Connect speech recognizer
         speechManager.onSpeechRecognized = { recognizedText ->
-            handleUserInput(recognizedText)
+            if (speechManager.voiceSettings.value.confirmationMode == TranscriptConfirmationMode.REVIEW_BEFORE_SEND) {
+                _pendingReviewTranscript.value = recognizedText
+            } else {
+                handleUserInput(recognizedText)
+            }
         }
 
         speechManager.onError = { errorMsg ->
@@ -186,6 +234,15 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateResponseStyle(style: String) {
+        val profile = _currentProfile.value ?: return
+        val updated = profile.copy(responseStyle = style)
+        _currentProfile.value = updated
+        viewModelScope.launch {
+            repository.saveProfile(updated)
+        }
+    }
+
     fun toggleSlang(enabled: Boolean) {
         val profile = _currentProfile.value ?: return
         val updated = profile.copy(slangEnabled = enabled)
@@ -222,11 +279,41 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleMic() {
-        if (speechManager.voiceState.value == VoiceState.LISTENING) {
+        if (speechManager.voiceState.value.isRecording) {
             speechManager.stopListening()
         } else {
+            _pendingReviewTranscript.value = null
             speechManager.startListening(_currentDialect.value.localeCode)
         }
+    }
+
+    fun retryVoiceInput() {
+        _pendingReviewTranscript.value = null
+        speechManager.retryListening(_currentDialect.value.localeCode)
+    }
+
+    fun clearPendingReviewTranscript() {
+        _pendingReviewTranscript.value = null
+    }
+
+    fun updateVoiceInputSettings(settings: VoiceInputSettings) {
+        speechManager.updateSettings(settings)
+    }
+
+    fun setVoiceInputMode(mode: VoiceInputMode) {
+        speechManager.setInputMode(mode)
+    }
+
+    fun setSilenceTimeout(timeoutMs: Long) {
+        speechManager.setSilenceTimeout(timeoutMs)
+    }
+
+    fun setMaxRecordingDuration(seconds: Int) {
+        speechManager.setMaxDuration(seconds)
+    }
+
+    fun setConfirmationMode(mode: TranscriptConfirmationMode) {
+        speechManager.setConfirmationMode(mode)
     }
 
     fun interruptAi() {
@@ -257,49 +344,164 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendChatMessage(userText: String) {
+    fun setInputMode(mode: InputMode) {
+        _inputMode.value = mode
+    }
+
+    fun updateResponseLength(length: String) {
+        val profile = _currentProfile.value ?: return
+        val updated = profile.copy(responseLength = length)
+        _currentProfile.value = updated
+        viewModelScope.launch {
+            repository.saveProfile(updated)
+        }
+    }
+
+    fun toggleNaturalMixing(enabled: Boolean) {
+        val profile = _currentProfile.value ?: return
+        val updated = profile.copy(naturalMixingEnabled = enabled)
+        _currentProfile.value = updated
+        viewModelScope.launch {
+            repository.saveProfile(updated)
+        }
+    }
+
+    fun sendChatMessage(userText: String, speakResponse: Boolean = (_inputMode.value == InputMode.VOICE)) {
         val dialect = _currentDialect.value
         val profile = _currentProfile.value
         val strength = profile?.regionalStrength ?: 0.75f
         val personalityStr = profile?.personality ?: VoicePersonality.FRIENDLY.name
         val personality = VoicePersonality.entries.find { it.name == personalityStr } ?: VoicePersonality.FRIENDLY
         val slangEnabled = profile?.slangEnabled ?: true
+        val responseLength = profile?.responseLength ?: "Balanced"
+        val naturalMixing = profile?.naturalMixingEnabled ?: true
 
         viewModelScope.launch {
-            // Save user message to DB
-            repository.saveMessage(dialect.id, role = "user", text = userText)
+            _isAiThinking.value = true
+            try {
+                // Save user message to DB
+                repository.saveMessage(dialect.id, role = "user", text = userText)
 
-            val history = _messages.value.takeLast(6).map { it.role to it.text }
-            val aiResponse = repository.getAiVoiceResponse(
-                userMessage = userText,
-                history = history,
-                dialect = dialect,
-                strength = strength,
-                personality = personality,
-                slangEnabled = slangEnabled
-            )
+                val history = _messages.value.takeLast(6).map { it.role to it.text }
+                val aiResponse = repository.getAiVoiceResponse(
+                    userMessage = userText,
+                    history = history,
+                    dialect = dialect,
+                    strength = strength,
+                    personality = personality,
+                    slangEnabled = slangEnabled,
+                    responseLength = responseLength,
+                    naturalMixingEnabled = naturalMixing
+                )
 
-            // Detect dialect slang used in AI message for quick tapping
-            val detectedSlang = dialect.typicalExpressions.filter {
-                aiResponse.contains(it.expression, ignoreCase = true)
-            }.map { it.expression }
+                // Detect dialect slang used in AI message for quick tapping
+                val detectedSlang = dialect.typicalExpressions.filter {
+                    aiResponse.contains(it.expression, ignoreCase = true)
+                }.map { it.expression }
 
-            // Save AI message to DB
-            repository.saveMessage(dialect.id, role = "assistant", text = aiResponse, highlightedSlang = detectedSlang)
+                // Save AI message to DB
+                repository.saveMessage(dialect.id, role = "assistant", text = aiResponse, highlightedSlang = detectedSlang)
 
-            // Speak response via dynamic TTS
-            val pitch = when (personality) {
-                VoicePersonality.FUNNY, VoicePersonality.ENERGETIC -> 1.15f
-                VoicePersonality.CALM -> 0.90f
-                else -> 1.0f
+                // Speak response via dynamic natural adult voice if speakResponse is requested
+                if (speakResponse && !isMuted.value) {
+                    // Natural processing delay (Requirement 46: short natural response start pause)
+                    kotlinx.coroutines.delay(380)
+                    val pacing = profile?.voiceSpeed ?: "Natural"
+                    speechManager.speak(
+                        text = aiResponse,
+                        localeCode = dialect.localeCode,
+                        speechPacing = pacing,
+                        personalityName = personality.name
+                    )
+                }
+            } finally {
+                _isAiThinking.value = false
             }
-            val rate = when (personality) {
-                VoicePersonality.ENERGETIC -> 1.1f
-                VoicePersonality.CALM, VoicePersonality.STORYTELLER -> 0.92f
-                else -> 1.0f
-            }
-            speechManager.speak(aiResponse, localeCode = dialect.localeCode, pitch = pitch, speechRate = rate)
         }
+    }
+
+    fun updateVoiceSpeed(speed: String) {
+        val profile = _currentProfile.value ?: return
+        val updated = profile.copy(voiceSpeed = speed)
+        _currentProfile.value = updated
+        viewModelScope.launch {
+            repository.saveProfile(updated)
+        }
+    }
+
+    fun regenerateLastMessage() {
+        val lastUserMessage = _messages.value.lastOrNull { it.role == "user" }
+        if (lastUserMessage != null) {
+            sendChatMessage(lastUserMessage.text, speakResponse = (_inputMode.value == InputMode.VOICE))
+        }
+    }
+
+    fun replayMessage(text: String) {
+        speakText(text)
+    }
+
+    fun compareLocalSayings(sentence: String) {
+        if (sentence.isBlank()) return
+        _localSayingsState.value = _localSayingsState.value.copy(inputText = sentence, isLoading = true)
+        viewModelScope.launch {
+            val results = repository.generateLocalSayings(sentence, _currentDialect.value)
+            _localSayingsState.value = _localSayingsState.value.copy(
+                inputText = sentence,
+                results = results,
+                isLoading = false
+            )
+        }
+    }
+
+    fun rewriteInVariousStyles(text: String) {
+        if (text.isBlank()) return
+        _styleRewriteState.value = _styleRewriteState.value.copy(inputText = text, isRewriting = true)
+        viewModelScope.launch {
+            val results = repository.rewriteInStyles(text, _currentDialect.value)
+            _styleRewriteState.value = _styleRewriteState.value.copy(
+                inputText = text,
+                results = results,
+                isRewriting = false
+            )
+        }
+    }
+
+    fun toggleSpeakingStyleLearning(enabled: Boolean) {
+        val current = speakingStyle.value ?: SpeakingStylePreferenceEntity()
+        updateSpeakingStylePreferences(current.copy(learningEnabled = enabled))
+    }
+
+    fun togglePauseSpeakingStyle(paused: Boolean) {
+        val current = speakingStyle.value ?: SpeakingStylePreferenceEntity()
+        updateSpeakingStylePreferences(current.copy(isPaused = paused))
+    }
+
+    fun selectVoiceProfile(profile: VoiceProfileEntity) {
+        _currentProfile.value = profile
+        val dialect = DialectCatalog.getDialectById(profile.dialectId)
+        _currentDialect.value = dialect
+        loadMessages(dialect.id)
+        updatePracticePhrase(dialect)
+    }
+
+    fun saveVoiceProfile(profile: VoiceProfileEntity) {
+        viewModelScope.launch {
+            repository.saveProfile(profile)
+            selectVoiceProfile(profile)
+            _userFeedbackNotice.value = "Profile saved: ${profile.profileName}"
+        }
+    }
+
+    fun updateSpeakingStyle(updated: SpeakingStylePreferenceEntity) {
+        updateSpeakingStylePreferences(updated)
+    }
+
+    fun resetSpeakingStyle() {
+        resetSpeakingStylePreferences()
+    }
+
+    fun inspectExpression(expression: RegionalExpression) {
+        _selectedExpressionForDetails.value = expression
     }
 
     // Explain Regional Expression bottom sheet
@@ -317,7 +519,15 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun speakText(text: String) {
         val dialect = _currentDialect.value
-        speechManager.speak(text, dialect.localeCode)
+        val profile = _currentProfile.value
+        val pacing = profile?.voiceSpeed ?: "Natural"
+        val personalityStr = profile?.personality ?: VoicePersonality.FRIENDLY.name
+        speechManager.speak(
+            text = text,
+            localeCode = dialect.localeCode,
+            speechPacing = pacing,
+            personalityName = personalityStr
+        )
     }
 
     // Dialect Practice (Voice Learning Mode)
@@ -397,6 +607,40 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateLocalSayingsInput(text: String) {
+        _localSayingsState.value = _localSayingsState.value.copy(inputText = text)
+    }
+
+    fun generateLocalSayings() {
+        val state = _localSayingsState.value
+        if (state.inputText.isBlank()) return
+        _localSayingsState.value = state.copy(isLoading = true)
+        viewModelScope.launch {
+            val results = repository.generateLocalSayings(state.inputText, _currentDialect.value)
+            _localSayingsState.value = _localSayingsState.value.copy(
+                results = results,
+                isLoading = false
+            )
+        }
+    }
+
+    fun updateStyleRewriteInput(text: String) {
+        _styleRewriteState.value = _styleRewriteState.value.copy(inputText = text)
+    }
+
+    fun rewriteInStyles() {
+        val state = _styleRewriteState.value
+        if (state.inputText.isBlank()) return
+        _styleRewriteState.value = state.copy(isRewriting = true)
+        viewModelScope.launch {
+            val results = repository.rewriteInStyles(state.inputText, _currentDialect.value)
+            _styleRewriteState.value = _styleRewriteState.value.copy(
+                results = results,
+                isRewriting = false
+            )
+        }
+    }
+
     // Dictionary Management
     fun addDictionaryEntry(
         word: String,
@@ -404,19 +648,28 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         region: String,
         exampleSentence: String,
         formalEquivalent: String,
-        category: String
+        category: String,
+        englishMeaning: String = "",
+        district: String = "",
+        pronunciation: String = "",
+        similarExpressionsCsv: String = "",
+        status: String = "Community submitted"
     ) {
         viewModelScope.launch {
             repository.addDictionaryEntry(
                 DictionaryEntryEntity(
                     expression = word,
                     meaning = meaning,
+                    englishMeaning = englishMeaning,
                     region = region,
+                    district = district,
                     exampleSentence = exampleSentence,
                     formalEquivalent = formalEquivalent,
                     category = category,
+                    pronunciation = pronunciation,
+                    similarExpressionsCsv = similarExpressionsCsv,
                     isUserContributed = true,
-                    status = "Verified"
+                    status = status
                 )
             )
             _userFeedbackNotice.value = "Added \"$word\" to regional dictionary!"

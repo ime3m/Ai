@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,27 +9,30 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -42,8 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.SpeakingStylePreferenceEntity
-import com.example.ui.theme.CyanPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,11 +62,10 @@ fun LearnSpeakingStyleDialog(
     var learningEnabled by remember { mutableStateOf(style.learningEnabled) }
     var frequentlyUsedExpressions by remember { mutableStateOf(style.frequentlyUsedExpressionsCsv) }
     var preferredSlang by remember { mutableStateOf(style.preferredSlangCsv) }
-    var formalityLevel by remember { mutableFloatStateOf(style.formalityLevel) }
-    var sentenceStyle by remember { mutableStateOf(style.sentenceStyle) }
-    var preferredResponseLength by remember { mutableStateOf(style.preferredResponseLength) }
+    var formality by remember { mutableFloatStateOf(style.formalityLevel) }
+    var responseLength by remember { mutableStateOf(style.preferredResponseLength) }
     var preferredTone by remember { mutableStateOf(style.preferredTone) }
-    var codeSwitchingHabit by remember { mutableStateOf(style.codeSwitchingHabit) }
+    var frequentlyUsedWords by remember { mutableStateOf(style.frequentlyUsedWordsCsv) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -70,14 +73,15 @@ fun LearnSpeakingStyleDialog(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        modifier = Modifier.testTag("learn_my_style_sheet")
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.testTag("learn_style_dialog")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .padding(24.dp)
+                .fillMaxHeight(0.88f)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
             // Header
             Row(
@@ -85,231 +89,185 @@ fun LearnSpeakingStyleDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Privacy Protected",
-                        tint = CyanPrimary
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Learn My Speaking Style",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Privacy-first personalized conversational style",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Main Opt-In Switch Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (learningEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Text(
+                    text = "Learn my speaking style",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Enable Speaking Style Learning",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (learningEnabled) "Personalization active. The AI adapts to your rhythm." else "Disabled. Responses follow standard regional baseline.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = learningEnabled,
-                        onCheckedChange = { learningEnabled = it },
-                        modifier = Modifier.testTag("toggle_learning_switch")
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Formality Level Slider
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Communication Formality Level",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
+                text = "The AI remembers your chosen expressions, tone, formality, and response length.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Slider(
-                value = formalityLevel,
-                onValueChange = { formalityLevel = it },
-                valueRange = 0.0f..1.0f
+
+            Spacer(modifier = Modifier.height(18.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Main Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Enable style learning",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (learningEnabled) "Active · Personal habits apply" else "Disabled · Standard regional baseline",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = learningEnabled,
+                    onCheckedChange = { learningEnabled = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedBorderColor = MaterialTheme.colorScheme.outline
+                    ),
+                    modifier = Modifier.testTag("style_learning_switch")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Formality slider
+            Text(
+                text = "Communication tone",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Ultra Casual (Banter)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    text = if (formality < 0.35f) "Casual & Relaxed" else if (formality < 0.65f) "Balanced" else "Formal & Polite",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Polite Formal",
+                    text = "${(formality * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Preferred Response Length
-            Text(
-                text = "Preferred Response Length",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
+            Slider(
+                value = formality,
+                onValueChange = { formality = it },
+                valueRange = 0.0f..1.0f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.outline
+                )
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Short & Punchy", "Medium", "Expressive & Detailed").forEach { length ->
-                    FilterChip(
-                        selected = preferredResponseLength == length,
-                        onClick = { preferredResponseLength = length },
-                        label = { Text(length) }
-                    )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Preferred Tone
+            // Preferred expressions
             Text(
-                text = "Preferred Conversational Tone",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
+                text = "Favorite regional expressions",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Warm & banter", "Respectful & calm", "Lively & energetic").forEach { tone ->
-                    FilterChip(
-                        selected = preferredTone == tone,
-                        onClick = { preferredTone = tone },
-                        label = { Text(tone) }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Code Switching / Mixed Language Habit
-            Text(
-                text = "Code-Switching & Language Mixing Habit",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(
-                    "Natural mixing with English (e.g. Manglish / Hinglish / Arabizi)",
-                    "Moderate loanwords only",
-                    "Pure regional language"
-                ).forEach { habit ->
-                    FilterChip(
-                        selected = codeSwitchingHabit == habit,
-                        onClick = { codeSwitchingHabit = habit },
-                        label = { Text(habit) }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Frequently Used Expressions
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
                 value = frequentlyUsedExpressions,
                 onValueChange = { frequentlyUsedExpressions = it },
-                label = { Text("Frequently Used Expressions (Comma-separated)") },
-                placeholder = { Text("e.g. sound lad, deadass, scene kya hai, എന്തൂട്ടാ") },
+                placeholder = { Text("e.g., ചങ്ങായി, ട്ടോ, proper boss", style = MaterialTheme.typography.bodySmall) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("user_frequent_expressions_input"),
-                shape = RoundedCornerShape(12.dp)
+                    .testTag("frequent_expressions_input"),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                )
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Preferred Slang Words
+            // Preferred slang
+            Text(
+                text = "Preferred slang terms",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             OutlinedTextField(
                 value = preferredSlang,
                 onValueChange = { preferredSlang = it },
-                label = { Text("Preferred Slang & Catchphrases") },
-                placeholder = { Text("e.g. changayi, sulaimani, bantai, quillo") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("user_preferred_slang_input"),
-                shape = RoundedCornerShape(12.dp)
+                placeholder = { Text("Comma separated slang you like to use", style = MaterialTheme.typography.bodySmall) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                )
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Frequently used words
+            Text(
+                text = "Frequently used words",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = frequentlyUsedWords,
+                onValueChange = { frequentlyUsedWords = it },
+                placeholder = { Text("Words you often use in conversation", style = MaterialTheme.typography.bodySmall) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                )
             )
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Privacy Guarantee Notice
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "Privacy Guarantee",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Preferences are stored strictly on-device in Room Database. You can edit, reset, or delete your preferences at any time.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Action Buttons: Save & Reset
+            // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
-                    onClick = {
-                        onReset()
-                        onDismiss()
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("reset_style_button")
+                    onClick = onReset,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reset")
+                    Icon(Icons.Default.Refresh, contentDescription = "Reset", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Reset", style = MaterialTheme.typography.bodyMedium)
                 }
 
                 Button(
@@ -318,22 +276,28 @@ fun LearnSpeakingStyleDialog(
                             learningEnabled = learningEnabled,
                             frequentlyUsedExpressionsCsv = frequentlyUsedExpressions,
                             preferredSlangCsv = preferredSlang,
-                            formalityLevel = formalityLevel,
-                            sentenceStyle = sentenceStyle,
-                            preferredResponseLength = preferredResponseLength,
+                            formalityLevel = formality,
+                            preferredResponseLength = responseLength,
                             preferredTone = preferredTone,
-                            codeSwitchingHabit = codeSwitchingHabit
+                            frequentlyUsedWordsCsv = frequentlyUsedWords
                         )
                         onSave(updated)
                         onDismiss()
                     },
                     modifier = Modifier
-                        .weight(1.5f)
-                        .testTag("save_style_button")
+                        .weight(1f)
+                        .testTag("save_style_preferences_button"),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Text("Save Preferences")
+                    Text("Save", style = MaterialTheme.typography.bodyMedium)
                 }
             }
+
+            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 }
