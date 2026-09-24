@@ -1,0 +1,7 @@
+{
+  "name": "Regional Voice AI",
+  "description": "Natural voice conversations across languages, regional dialects, accents, slang, and local speaking styles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
