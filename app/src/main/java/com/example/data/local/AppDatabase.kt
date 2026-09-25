@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.data.model.ConversationMessageEntity
+import com.example.data.model.ConversationSessionEntity
 import com.example.data.model.DictionaryEntryEntity
 import com.example.data.model.SpeakingStylePreferenceEntity
 import com.example.data.model.VoiceProfileEntity
@@ -12,11 +13,12 @@ import com.example.data.model.VoiceProfileEntity
 @Database(
     entities = [
         VoiceProfileEntity::class,
+        ConversationSessionEntity::class,
         ConversationMessageEntity::class,
         DictionaryEntryEntity::class,
         SpeakingStylePreferenceEntity::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

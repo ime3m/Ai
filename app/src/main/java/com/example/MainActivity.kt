@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,16 +42,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.VoiceViewModel
 import com.example.ui.screens.ChatScreen
-import com.example.ui.screens.DictionaryScreen
 import com.example.ui.screens.ExploreDialectsScreen
+import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.ProfileScreen
-import com.example.ui.screens.VoiceConversationScreen
 import com.example.ui.theme.MyApplicationTheme
 
 enum class AppDestination(val route: String, val label: String, val icon: ImageVector, val tag: String) {
     CHAT("chat", "Chat", Icons.AutoMirrored.Filled.Chat, "nav_chat"),
-    EXPLORE("explore", "Explore", Icons.Default.Public, "nav_explore"),
-    DICTIONARY("dictionary", "Dictionary", Icons.Default.Book, "nav_dictionary"),
+    HISTORY("history", "History", Icons.Default.History, "nav_history"),
+    EXPLORE("explore", "Explore", Icons.Default.Explore, "nav_explore"),
     PROFILE("profile", "Profile", Icons.Default.Person, "nav_profile")
 }
 
@@ -147,16 +146,16 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
                     modifier = Modifier.padding(innerPadding)
                 )
             }
+            AppDestination.HISTORY -> {
+                HistoryScreen(
+                    viewModel = viewModel,
+                    onNavigateToChat = { currentDestination = AppDestination.CHAT }
+                )
+            }
             AppDestination.EXPLORE -> {
                 ExploreDialectsScreen(
                     viewModel = viewModel,
                     onStartVoiceChat = { currentDestination = AppDestination.CHAT },
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            AppDestination.DICTIONARY -> {
-                DictionaryScreen(
-                    viewModel = viewModel,
                     modifier = Modifier.padding(innerPadding)
                 )
             }

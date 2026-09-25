@@ -19,10 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,10 +52,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.SpeakingStylePreferenceEntity
+import com.example.data.model.VoicePersonality
 import com.example.data.model.VoiceProfileEntity
 import com.example.ui.VoiceViewModel
+import com.example.ui.components.HierarchicalDialectDrillDownModal
 import com.example.ui.components.LearnSpeakingStyleDialog
 import com.example.ui.components.ProfileEditorDialog
+import com.example.ui.components.RegionalSettingsSheet
+import com.example.ui.components.VoiceDiagnosticSheet
+import androidx.compose.material.icons.filled.BugReport
+import com.example.ui.theme.components.ThemeSelector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,11 +71,17 @@ fun ProfileScreen(
 ) {
     val profiles by viewModel.allProfiles.collectAsState()
     val activeProfile by viewModel.currentProfile.collectAsState()
+    val currentDialect by viewModel.currentDialect.collectAsState()
     val speakingStyle by viewModel.speakingStyle.collectAsState()
 
     var showProfileEditor by remember { mutableStateOf(false) }
     var profileToEdit by remember { mutableStateOf<VoiceProfileEntity?>(null) }
     var showStyleDialog by remember { mutableStateOf(false) }
+    var showRegionalSettingsSheet by remember { mutableStateOf(false) }
+    var showDialectDrillDown by remember { mutableStateOf(false) }
+
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val drillDownSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Column(
         modifier = modifier
@@ -102,6 +117,120 @@ fun ProfileScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            // SECTION 0: Target Regional Dialect & Language Style (Gemini Prompt Context)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+                    .testTag("target_dialect_prompt_settings_card")
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Target Dialect & Prompt Settings",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = "Gemini API Active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Select your target regional dialect or language style to influence Gemini API prompt context and real-time responses.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Current Target Dialect summary pill
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Target: ${currentDialect.dialectName}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${currentDialect.cityOrArea} · ${currentDialect.country} · ${((activeProfile?.regionalStrength ?: 0.75f) * 100).toInt()}% Strength",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Button(
+                            onClick = { showRegionalSettingsSheet = true },
+                            modifier = Modifier.testTag("open_prompt_settings_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Tune Settings", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
+            // Centralized Semantic Theme & Appearance
+            ThemeSelector()
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp
+            )
+
             // SECTION 1: Active Voice Profile
             Column {
                 Row(
@@ -611,6 +740,57 @@ fun ProfileScreen(
                 showStyleDialog = false
             },
             onDismiss = { showStyleDialog = false }
+        )
+    }
+
+    // Target Regional Dialect & Language Style Settings Sheet
+    if (showRegionalSettingsSheet) {
+        val promptPreview = remember(currentDialect, activeProfile) {
+            viewModel.getPromptContextPreview(
+                targetDialect = currentDialect,
+                strength = activeProfile?.regionalStrength ?: 0.75f,
+                personality = VoicePersonality.entries.find { it.name == activeProfile?.personality } ?: VoicePersonality.FRIENDLY,
+                slangEnabled = activeProfile?.slangEnabled ?: true,
+                responseLength = activeProfile?.responseLength ?: "Balanced",
+                naturalMixing = activeProfile?.naturalMixingEnabled ?: true,
+                customPromptNotes = activeProfile?.customPromptNotes ?: ""
+            )
+        }
+
+        RegionalSettingsSheet(
+            sheetState = settingsSheetState,
+            profile = activeProfile,
+            currentDialect = currentDialect,
+            onSelectDialect = { dialect ->
+                viewModel.selectDialect(dialect)
+            },
+            onOpenHierarchicalDrillDown = {
+                showRegionalSettingsSheet = false
+                showDialectDrillDown = true
+            },
+            onStrengthChange = { viewModel.updateRegionalStrength(it) },
+            onPersonalityChange = { viewModel.updatePersonality(it) },
+            onSlangToggle = { viewModel.toggleSlang(it) },
+            onNaturalMixingToggle = { viewModel.toggleNaturalMixing(it) },
+            onResponseStyleChange = { viewModel.updateResponseStyle(it) },
+            onVoiceSpeedChange = { viewModel.updateVoiceSpeed(it) },
+            onCustomPromptNotesChange = { viewModel.updateCustomPromptNotes(it) },
+            promptContextPreview = promptPreview,
+            onDismiss = { showRegionalSettingsSheet = false }
+        )
+    }
+
+    // Hierarchical Dialect DrillDown
+    if (showDialectDrillDown) {
+        HierarchicalDialectDrillDownModal(
+            sheetState = drillDownSheetState,
+            selectedDialect = currentDialect,
+            onSelectDialect = { dialect ->
+                viewModel.selectDialect(dialect)
+                showDialectDrillDown = false
+            },
+            onPreviewAudio = { viewModel.speakText(it) },
+            onDismiss = { showDialectDrillDown = false }
         )
     }
 }

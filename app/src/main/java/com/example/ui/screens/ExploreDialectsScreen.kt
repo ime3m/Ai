@@ -61,6 +61,7 @@ import com.example.ui.components.ExplainSlangDialog
 
 enum class ExploreTab(val label: String) {
     DIALECTS("Dialects"),
+    DICTIONARY("Dictionary"),
     LOCAL_SAYINGS("Sayings"),
     STYLE_REWRITE("Rewriter"),
     PRACTICE("Practice")
@@ -115,6 +116,7 @@ fun ExploreDialectsScreen(
             Text(
                 text = when (currentTab) {
                     ExploreTab.DIALECTS -> "Discover regional dialects and local speaking styles"
+                    ExploreTab.DICTIONARY -> "Regional dictionary, expressions & vocabulary"
                     ExploreTab.LOCAL_SAYINGS -> "How would a local say this? Comparative speech"
                     ExploreTab.STYLE_REWRITE -> "Rewrite phrases across regional & situational styles"
                     ExploreTab.PRACTICE -> "Authentic regional pronunciation & voice feedback"
@@ -279,6 +281,13 @@ fun ExploreDialectsScreen(
                         }
                     }
                 }
+            }
+
+            ExploreTab.DICTIONARY -> {
+                DictionaryScreen(
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             ExploreTab.LOCAL_SAYINGS -> {

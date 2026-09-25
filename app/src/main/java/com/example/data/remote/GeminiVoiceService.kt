@@ -2,6 +2,8 @@ package com.example.data.remote
 
 import android.util.Log
 import com.example.BuildConfig
+import com.example.data.knowledge.RealTimeKnowledgeEngine
+import com.example.data.knowledge.RealTimeKnowledgeResponse
 import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
@@ -11,7 +13,14 @@ import com.example.data.model.SlangTranslationResult
 import com.example.data.model.SpeakingStylePreferenceEntity
 import com.example.data.model.StyleRewriteResult
 import com.example.data.model.VoicePersonality
+import com.example.data.reasoning.AiResponseTrace
+import com.example.data.reasoning.ResponseQualitySystem
+import com.example.data.reasoning.UniversalReasoningEngine
+import com.example.data.reasoning.UserIntent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -33,11 +42,85 @@ class GeminiVoiceService {
     private val modelName = "gemini-3.5-flash"
     private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
 
+    private val _latestTrace = MutableStateFlow<AiResponseTrace?>(null)
+    val latestTrace: StateFlow<AiResponseTrace?> = _latestTrace.asStateFlow()
+
     private fun getApiKey(): String {
         return try {
             BuildConfig.GEMINI_API_KEY
         } catch (_: Exception) {
             ""
+        }
+    }
+
+    suspend fun transcribeAudio(
+        audioData: ByteArray,
+        mimeType: String = "audio/wav",
+        dialect: RegionalDialect? = null
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = getApiKey()
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") return@withContext null
+
+        try {
+            val base64Audio = android.util.Base64.encodeToString(audioData, android.util.Base64.NO_WRAP)
+            val dialectHint = dialect?.let {
+                "Target dialect: ${it.dialectName} (${it.cityOrArea}, ${it.region}, ${it.country}). Language: ${it.language}."
+            } ?: ""
+
+            val jsonBody = JSONObject().apply {
+                val contentsArray = JSONArray()
+                val contentObj = JSONObject().apply {
+                    val partsArray = JSONArray()
+                    val audioPart = JSONObject().apply {
+                        put("inline_data", JSONObject().apply {
+                            put("mime_type", mimeType)
+                            put("data", base64Audio)
+                        })
+                    }
+                    val textPart = JSONObject().apply {
+                        put(
+                            "text",
+                            "Please transcribe the speech in this audio accurately. $dialectHint " +
+                                "Transcribe verbatim in the speaker's original language and dialect. " +
+                                "Do NOT add conversational remarks, introductory text, explanations, or quotes. " +
+                                "If there is silence, unintelligible noise, or no spoken words, respond with nothing."
+                        )
+                    }
+                    partsArray.put(audioPart)
+                    partsArray.put(textPart)
+                    put("parts", partsArray)
+                }
+                contentsArray.put(contentObj)
+                put("contents", contentsArray)
+            }
+
+            val request = Request.Builder()
+                .url("$baseUrl?key=$apiKey")
+                .post(jsonBody.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e("GeminiVoiceService", "Transcription failed with code: ${response.code}")
+                    return@withContext null
+                }
+                val body = response.body?.string() ?: return@withContext null
+                val root = JSONObject(body)
+                val candidates = root.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val content = candidate.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        val transcribed = parts.getJSONObject(0).optString("text", "").trim()
+                        return@withContext transcribed.ifBlank { null }
+                    }
+                }
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiVoiceService", "Error during Gemini audio transcription", e)
+            null
         }
     }
 
@@ -50,10 +133,19 @@ class GeminiVoiceService {
         speakingStyle: SpeakingStylePreferenceEntity?,
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
-        naturalMixingEnabled: Boolean = true
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = ""
     ): String = withContext(Dispatchers.IO) {
+        val isTimeSensitive = RealTimeKnowledgeEngine.requiresRealTimeRetrieval(userMessage)
+        val verifiedKnowledge = if (isTimeSensitive) {
+            RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(userMessage, dialect)
+        } else null
+
         val apiKey = getApiKey()
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            if (verifiedKnowledge != null) {
+                return@withContext verifiedKnowledge.dialectText
+            }
             return@withContext fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
         }
 
@@ -65,7 +157,9 @@ class GeminiVoiceService {
                 speakingStyle = speakingStyle,
                 slangEnabled = slangEnabled,
                 responseLength = responseLength,
-                naturalMixingEnabled = naturalMixingEnabled
+                naturalMixingEnabled = naturalMixingEnabled,
+                customPromptNotes = customPromptNotes,
+                groundingFact = verifiedKnowledge?.factualText
             )
             val requestJson = JSONObject()
 
@@ -115,6 +209,10 @@ class GeminiVoiceService {
 
             if (!response.isSuccessful) {
                 Log.e("GeminiVoiceService", "API error: ${response.code} $responseBody")
+                // Graceful 429 quota exhaustion shield & fallback to verified real-time knowledge
+                if (verifiedKnowledge != null) {
+                    return@withContext verifiedKnowledge.dialectText
+                }
                 return@withContext fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
             }
 
@@ -127,13 +225,27 @@ class GeminiVoiceService {
 
             if (!text.isNullOrBlank()) {
                 cleanVoiceResponse(text)
+            } else if (verifiedKnowledge != null) {
+                verifiedKnowledge.dialectText
             } else {
                 fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
             }
         } catch (e: Exception) {
             Log.e("GeminiVoiceService", "Call failed", e)
-            fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
+            if (verifiedKnowledge != null) {
+                verifiedKnowledge.dialectText
+            } else {
+                fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
+            }
         }
+    }
+
+    fun getRealTimeKnowledge(
+        query: String,
+        dialect: RegionalDialect,
+        forceWeb: Boolean = false
+    ): RealTimeKnowledgeResponse? {
+        return RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(query, dialect, forceWeb)
     }
 
     suspend fun translateSlang(
@@ -398,7 +510,10 @@ class GeminiVoiceService {
         speakingStyle: SpeakingStylePreferenceEntity?,
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
-        naturalMixingEnabled: Boolean = true
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = "",
+        groundingFact: String? = null,
+        intent: UserIntent? = null
     ): String {
         val strengthDescription = when {
             regionalStrength < 0.35f -> "Mild regional flavor: Mostly standard ${dialect.language}, with subtle regional cadence and minimal colloquialisms."
@@ -423,6 +538,14 @@ class GeminiVoiceService {
         } else {
             "LANGUAGE MIXING: Prefer staying within ${dialect.language} without excessive loanwords."
         }
+
+        val customDirectivesSection = if (customPromptNotes.isNotBlank()) {
+            """
+            USER CUSTOM DIALECT & STYLE DIRECTIVES:
+            - User specified prompt context: $customPromptNotes
+            - Prioritize this conversational nuance while maintaining the target dialect cadence.
+            """.trimIndent()
+        } else ""
 
         val personalStyleSection = if (speakingStyle != null && speakingStyle.learningEnabled) {
             """
@@ -449,6 +572,7 @@ class GeminiVoiceService {
             $slangInstruction
             $lengthInstruction
             $mixingInstruction
+            $customDirectivesSection
             
             CRITICAL CONVERSATIONAL VOICE BEHAVIOR (MANDATORY):
             - You are an adult human having a real, warm spoken conversation with another adult over tea or on a phone call.
@@ -468,7 +592,38 @@ class GeminiVoiceService {
             - Respond naturally in ${dialect.dialectName} with authentic human warmth.
             
             $personalStyleSection
+            
+            REAL-TIME GROUNDING & TIME CONTEXT (MANDATORY):
+            - Current Date: September 24, 2026.
+            - You must always be aware that the current year is 2026.
+            - STALE KNOWLEDGE PROTECTION: Never confuse pre-trained static knowledge with what is true today.
+            - Fact verification: As of September 2026, the Chief Minister of Kerala is V. D. Satheesan (Official sources: Kerala Government Portal, Kerala Legislative Assembly). You must NEVER claim that Pinarayi Vijayan is the current Chief Minister.
+            ${if (!groundingFact.isNullOrBlank()) "- GROUNDED FACT FOR THIS QUERY: $groundingFact. You must incorporate this exact verified fact into your regional dialect response." else ""}
+            - Maintain separation between factual truth and dialect style: The factual answer must be 100% accurate, while the expression matches the natural local cadence of ${dialect.cityOrArea}.
         """.trimIndent()
+    }
+
+    fun previewPromptContext(
+        dialect: RegionalDialect,
+        regionalStrength: Float,
+        personality: VoicePersonality,
+        speakingStyle: SpeakingStylePreferenceEntity?,
+        slangEnabled: Boolean,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = ""
+    ): String {
+        return buildSystemPrompt(
+            dialect = dialect,
+            regionalStrength = regionalStrength,
+            personality = personality,
+            speakingStyle = speakingStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes,
+            groundingFact = null
+        )
     }
 
     suspend fun generateLocalSayings(

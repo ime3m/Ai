@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -41,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -88,14 +94,21 @@ import androidx.compose.ui.unit.sp
 import com.example.audio.VoiceState
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.RegionalDialect
+import com.example.data.model.VoicePersonality
 import com.example.data.model.VoiceProfileEntity
 import com.example.ui.VoiceViewModel
 import com.example.ui.components.CompactVoiceWaveBar
 import com.example.ui.components.ExplainSlangDialog
 import com.example.ui.components.HierarchicalDialectDrillDownModal
+import com.example.ui.components.RealTimeKnowledgeSheet
 import com.example.ui.components.RegionalSettingsSheet
 import com.example.ui.components.SoundWaveStyle
 import com.example.ui.components.SoundWaveVisualizer
+import com.example.ui.components.VoiceDiagnosticSheet
+import androidx.compose.material.icons.filled.BugReport
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Minimalist, elegant ChatScreen composable featuring:
@@ -121,6 +134,8 @@ fun ChatScreen(
     val selectedExpression by viewModel.selectedExpressionForDetails.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val soundLevel by viewModel.soundLevel.collectAsState()
+    val activeKnowledgeDetails by viewModel.activeKnowledgeDetails.collectAsState()
+    val isWebSearchEnabled by viewModel.isWebSearchEnabled.collectAsState()
 
     var textInput by remember { mutableStateOf("") }
     var showDialectSelector by remember { mutableStateOf(false) }
@@ -129,7 +144,20 @@ fun ChatScreen(
 
     val dialectSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val knowledgeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val diagnosticSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showDiagnosticsSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.toggleMic()
+        } else {
+            viewModel.showNotice("Microphone permission is required to talk.")
+        }
+    }
 
     // Automatically scroll to latest message or ongoing transcript
     LaunchedEffect(messages.size, partialTranscript, isAiThinking) {
@@ -153,7 +181,9 @@ fun ChatScreen(
             onOpenDialectSelector = { showDialectSelector = true },
             onOpenSettings = { showSettingsSheet = true },
             onToggleMute = { viewModel.toggleMute() },
-            onClearChat = { viewModel.clearConversationHistory() }
+            onNewChat = { viewModel.startNewConversation() },
+            onClearChat = { viewModel.clearConversationHistory() },
+            onOpenDiagnostics = { showDiagnosticsSheet = true }
         )
 
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
@@ -198,6 +228,10 @@ fun ChatScreen(
                             },
                             onTranslate = { viewModel.inspectExpression(message.text) },
                             onInspectSlang = { slang -> viewModel.inspectExpression(slang) },
+                            onShowKnowledgeDetails = {
+                                viewModel.showKnowledgeDetailsForMessage(message)
+                            },
+                            onDelete = { viewModel.deleteMessage(message.id) },
                             onRegenerate = if (message == messages.lastOrNull { it.role == "assistant" }) {
                                 { viewModel.regenerateLastMessage() }
                             } else null
@@ -228,7 +262,7 @@ fun ChatScreen(
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
 
         // -------------------------------------------------------------
-        // 3. SIMPLE INPUT COMPOSER WITH REAL-TIME SOUND-WAVE VISUALIZATION
+        // 3. SIMPLE INPUT COMPOSER WITH REAL-TIME SOUND-WAVE VISUALIZATION & WEB TOGGLE
         // -------------------------------------------------------------
         SimpleInputComposer(
             textInput = textInput,
@@ -236,11 +270,25 @@ fun ChatScreen(
             voiceState = voiceState,
             soundLevel = soundLevel,
             dialect = currentDialect,
+            isWebSearchEnabled = isWebSearchEnabled,
+            partialTranscript = partialTranscript,
+            onToggleWebSearch = { viewModel.toggleWebSearch() },
             onMicClick = {
                 if (voiceState == VoiceState.SPEAKING) {
                     viewModel.interruptAi()
-                } else {
+                } else if (voiceState.isRecording) {
                     viewModel.toggleMic()
+                } else {
+                    val hasMicPermission = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (hasMicPermission) {
+                        viewModel.toggleMic()
+                    } else {
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
                 }
             },
             onSendClick = {
@@ -249,6 +297,9 @@ fun ChatScreen(
                     viewModel.sendChatMessage(toSend, speakResponse = !isMuted)
                     textInput = ""
                 }
+            },
+            onSelectSamplePhrase = { phrase ->
+                textInput = phrase
             }
         )
     }
@@ -256,15 +307,46 @@ fun ChatScreen(
     // -----------------------------------------------------------------
     // BOTTOM SHEETS & OVERLAYS
     // -----------------------------------------------------------------
+    activeKnowledgeDetails?.let { knowledge ->
+        RealTimeKnowledgeSheet(
+            sheetState = knowledgeSheetState,
+            knowledge = knowledge,
+            onDismiss = { viewModel.dismissKnowledgeDetails() }
+        )
+    }
+
     if (showSettingsSheet) {
+        val promptPreview = remember(currentDialect, currentProfile) {
+            viewModel.getPromptContextPreview(
+                targetDialect = currentDialect,
+                strength = currentProfile?.regionalStrength ?: 0.75f,
+                personality = VoicePersonality.entries.find { it.name == currentProfile?.personality } ?: VoicePersonality.FRIENDLY,
+                slangEnabled = currentProfile?.slangEnabled ?: true,
+                responseLength = currentProfile?.responseLength ?: "Balanced",
+                naturalMixing = currentProfile?.naturalMixingEnabled ?: true,
+                customPromptNotes = currentProfile?.customPromptNotes ?: ""
+            )
+        }
+
         RegionalSettingsSheet(
             sheetState = settingsSheetState,
             profile = currentProfile,
+            currentDialect = currentDialect,
+            onSelectDialect = { dialect ->
+                viewModel.selectDialect(dialect)
+            },
+            onOpenHierarchicalDrillDown = {
+                showSettingsSheet = false
+                showDialectSelector = true
+            },
             onStrengthChange = { viewModel.updateRegionalStrength(it) },
             onPersonalityChange = { viewModel.updatePersonality(it) },
             onSlangToggle = { viewModel.toggleSlang(it) },
+            onNaturalMixingToggle = { viewModel.toggleNaturalMixing(it) },
             onResponseStyleChange = { viewModel.updateResponseStyle(it) },
             onVoiceSpeedChange = { viewModel.updateVoiceSpeed(it) },
+            onCustomPromptNotesChange = { viewModel.updateCustomPromptNotes(it) },
+            promptContextPreview = promptPreview,
             onDismiss = { showSettingsSheet = false }
         )
     }
@@ -289,6 +371,14 @@ fun ChatScreen(
             onDismiss = { viewModel.dismissExpressionDetails() }
         )
     }
+
+    if (showDiagnosticsSheet) {
+        VoiceDiagnosticSheet(
+            sheetState = diagnosticSheetState,
+            viewModel = viewModel,
+            onDismiss = { showDiagnosticsSheet = false }
+        )
+    }
 }
 
 /**
@@ -303,7 +393,9 @@ private fun DynamicRegionalHeader(
     onOpenDialectSelector: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleMute: () -> Unit,
-    onClearChat: () -> Unit
+    onNewChat: () -> Unit,
+    onClearChat: () -> Unit,
+    onOpenDiagnostics: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -354,11 +446,25 @@ private fun DynamicRegionalHeader(
                 )
             }
 
-            // Top action buttons (Hierarchy Drill-down, Mute/Unmute, Tune Settings, Overflow Menu)
+            // Top action buttons (New Chat, Hierarchy Drill-down, Mute/Unmute, Tune Settings, Overflow Menu)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                // New Chat Button
+                IconButton(
+                    onClick = onNewChat,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("header_new_chat_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Conversation",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 // Regional Hierarchy Drill-down trigger
                 IconButton(
                     onClick = onOpenDialectSelector,
@@ -438,6 +544,22 @@ private fun DynamicRegionalHeader(
                                 )
                             },
                             modifier = Modifier.testTag("menu_clear_conversation")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Voice diagnostics (dev)") },
+                            onClick = {
+                                showMenu = false
+                                onOpenDiagnostics()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.BugReport,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            modifier = Modifier.testTag("menu_voice_diagnostics")
                         )
                     }
                 }
@@ -529,34 +651,51 @@ private fun SharedMessageBubble(
     onCopy: () -> Unit,
     onTranslate: () -> Unit,
     onInspectSlang: (String) -> Unit,
+    onShowKnowledgeDetails: (() -> Unit)? = null,
+    onDelete: () -> Unit,
     onRegenerate: (() -> Unit)?
 ) {
     val isUser = message.role == "user"
+    val timeFormatted = remember(message.timestamp) {
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestamp))
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(if (isUser) "user_message_item" else "ai_message_item")
     ) {
-        // Sender Label
+        // Sender Label and Timestamp
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (isUser) "You" else "${dialect.cityOrArea} AI",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
-
-            if (!isUser) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(
-                    text = "· ${dialect.dialectName}",
+                    text = if (isUser) "You" else "${dialect.cityOrArea} AI",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
+
+                if (!isUser) {
+                    Text(
+                        text = "· ${dialect.dialectName}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+
+            Text(
+                text = timeFormatted,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -568,6 +707,34 @@ private fun SharedMessageBubble(
             color = MaterialTheme.colorScheme.onSurface,
             lineHeight = 24.sp
         )
+
+        // Real-Time Knowledge & Grounding Source Badge
+        if (!isUser && message.isRealTimeKnowledge) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f))
+                    .clickable { onShowKnowledgeDetails?.invoke() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag("real_time_source_badge_${message.id}"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Public,
+                    contentDescription = "Real-time source",
+                    modifier = Modifier.size(13.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = "Current information • ${message.knowledgeTimestamp.ifBlank { "September 2026" }} (Tap for sources)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
 
         // Highlighted Regional Slang Pills (if detected in the AI response)
         val slangs = remember(message.highlightedSlangCsv) {
@@ -606,13 +773,13 @@ private fun SharedMessageBubble(
             }
         }
 
-        // Action Toolbar for AI responses (Play, Copy, Translate, Regenerate)
-        if (!isUser) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        // Action Toolbar
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (!isUser) {
                 // Play Voice
                 ActionButton(
                     icon = Icons.AutoMirrored.Filled.VolumeUp,
@@ -646,6 +813,30 @@ private fun SharedMessageBubble(
                         testTag = "regenerate_message_button_${message.id}"
                     )
                 }
+
+                // Delete from Room DB
+                ActionButton(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    onClick = onDelete,
+                    testTag = "delete_message_button_${message.id}"
+                )
+            } else {
+                // Copy for User
+                ActionButton(
+                    icon = Icons.Default.ContentCopy,
+                    label = "Copy",
+                    onClick = onCopy,
+                    testTag = "copy_message_button_${message.id}"
+                )
+
+                // Delete from Room DB
+                ActionButton(
+                    icon = Icons.Default.DeleteOutline,
+                    label = "Delete",
+                    onClick = onDelete,
+                    testTag = "delete_message_button_${message.id}"
+                )
             }
         }
     }
@@ -944,18 +1135,22 @@ private fun SimpleInputComposer(
     voiceState: VoiceState,
     soundLevel: Float,
     dialect: RegionalDialect,
+    isWebSearchEnabled: Boolean,
+    partialTranscript: String = "",
+    onToggleWebSearch: () -> Unit,
     onMicClick: () -> Unit,
-    onSendClick: () -> Unit
+    onSendClick: () -> Unit,
+    onSelectSamplePhrase: ((String) -> Unit)? = null
 ) {
-    val isListening = voiceState == VoiceState.LISTENING
-    val isSpeaking = voiceState == VoiceState.SPEAKING
-    val isProcessing = voiceState == VoiceState.PROCESSING
+    val isListening = voiceState.isRecording
+    val isSpeaking = voiceState.isSpeaking
+    val isProcessing = voiceState.isProcessing
 
     // Infinite breathing scale animation during listening state
     val infiniteTransition = rememberInfiniteTransition(label = "micPulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1.0f,
-        targetValue = if (isListening) 1.25f else 1.0f,
+        targetValue = if (isListening) 1.22f else 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -972,9 +1167,9 @@ private fun SimpleInputComposer(
             .navigationBarsPadding()
             .testTag("chat_input_composer")
     ) {
-        // Real-time animated sound-wave visualization during recording / listening
+        // Voice State and Live Transcript / Visualizer
         AnimatedVisibility(
-            visible = isListening,
+            visible = isListening || isProcessing,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
@@ -983,14 +1178,90 @@ private fun SimpleInputComposer(
                     .fillMaxWidth()
                     .padding(bottom = 10.dp)
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isProcessing) {
+                            "⏳ Processing speech with Gemini..."
+                        } else {
+                            "🎙 Listening in ${dialect.dialectName} (Tap stop when done)"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isProcessing) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                if (partialTranscript.isNotBlank() && isListening) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = "\"$partialTranscript\"",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 SoundWaveVisualizer(
                     soundLevel = soundLevel,
                     isRecording = isListening,
                     waveStyle = SoundWaveStyle.DUAL,
                     barCount = 30,
-                    height = 44.dp,
+                    height = 40.dp,
                     showLevelBadge = true
                 )
+            }
+        }
+
+        // Quick Suggestion Chips when idle and input is empty
+        if (!isListening && !isProcessing && textInput.isBlank() && dialect.samplePhrases.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 2.dp)
+            ) {
+                items(dialect.samplePhrases.take(4)) { phrase ->
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onSelectSamplePhrase?.invoke(phrase) },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = phrase,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -999,13 +1270,40 @@ private fun SimpleInputComposer(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Web Search Grounding Toggle Button
+            IconButton(
+                onClick = onToggleWebSearch,
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isWebSearchEnabled) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        }
+                    )
+                    .testTag("chat_web_search_toggle")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Public,
+                    contentDescription = if (isWebSearchEnabled) "Web Search ON" else "Web Search OFF",
+                    tint = if (isWebSearchEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
             // Text Input Field
             OutlinedTextField(
                 value = textInput,
                 onValueChange = onTextChanged,
                 placeholder = {
                     Text(
-                        text = if (isListening) "Listening to you..." else "Speak or write in ${dialect.cityOrArea}...",
+                        text = if (isListening) "Listening to you..." else if (isWebSearchEnabled) "Search web & ask in ${dialect.cityOrArea}..." else "Speak or write in ${dialect.cityOrArea}...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1069,12 +1367,14 @@ private fun SimpleInputComposer(
                     Icon(
                         imageVector = when {
                             isSpeaking -> Icons.Default.Stop
-                            isListening -> Icons.Default.Mic
+                            isListening -> Icons.Default.Stop
+                            isProcessing -> Icons.Default.Refresh
                             else -> Icons.Default.Mic
                         },
                         contentDescription = when {
                             isSpeaking -> "Stop AI Speech"
-                            isListening -> "Listening..."
+                            isListening -> "Stop and send speech"
+                            isProcessing -> "Processing speech..."
                             else -> "Tap to speak"
                         },
                         tint = micIconColor,

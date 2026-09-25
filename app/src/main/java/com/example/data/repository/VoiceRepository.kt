@@ -17,8 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 
 class VoiceRepository(
-    private val voiceDao: VoiceDao,
-    private val geminiService: GeminiVoiceService
+    val voiceDao: VoiceDao,
+    val geminiService: GeminiVoiceService
 ) {
 
     val allProfiles: Flow<List<VoiceProfileEntity>> = voiceDao.getAllProfiles()
@@ -131,8 +131,113 @@ class VoiceRepository(
         }
     }
 
+    val allActiveSessions: Flow<List<com.example.data.model.ConversationSessionEntity>> = voiceDao.getAllActiveSessions()
+    val pinnedSessions: Flow<List<com.example.data.model.ConversationSessionEntity>> = voiceDao.getPinnedSessions()
+    val archivedSessions: Flow<List<com.example.data.model.ConversationSessionEntity>> = voiceDao.getArchivedSessions()
+
+    fun searchSessions(query: String): Flow<List<com.example.data.model.ConversationSessionEntity>> {
+        return voiceDao.searchSessions(query)
+    }
+
+    suspend fun getSessionById(sessionId: String): com.example.data.model.ConversationSessionEntity? {
+        return voiceDao.getSessionById(sessionId)
+    }
+
+    suspend fun createNewSession(title: String, dialectId: String): com.example.data.model.ConversationSessionEntity {
+        val session = com.example.data.model.ConversationSessionEntity(
+            title = title,
+            dialectId = dialectId,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis()
+        )
+        voiceDao.insertSession(session)
+        return session
+    }
+
+    suspend fun pinSession(sessionId: String, isPinned: Boolean) {
+        voiceDao.setSessionPinned(sessionId, isPinned)
+    }
+
+    suspend fun archiveSession(sessionId: String, isArchived: Boolean) {
+        voiceDao.setSessionArchived(sessionId, isArchived)
+    }
+
+    suspend fun renameSession(sessionId: String, title: String) {
+        voiceDao.renameSession(sessionId, title)
+    }
+
+    suspend fun deleteSession(sessionId: String) {
+        voiceDao.deleteMessagesForConversation(sessionId)
+        voiceDao.deleteSession(sessionId)
+    }
+
+    val allMessagesDesc: Flow<List<ConversationMessageEntity>> = voiceDao.getAllMessagesDesc()
+    val allMessages: Flow<List<ConversationMessageEntity>> = voiceDao.getAllMessages()
+    val messageCount: Flow<Int> = voiceDao.getMessageCount()
+
+    fun getMessagesForConversation(conversationId: String): Flow<List<ConversationMessageEntity>> {
+        return voiceDao.getMessagesForConversation(conversationId)
+    }
+
+    fun getRecentMessagesForConversation(conversationId: String, limit: Int = 30): Flow<List<ConversationMessageEntity>> {
+        return voiceDao.getRecentMessagesForConversation(conversationId, limit)
+    }
+
+    fun searchMessages(query: String): Flow<List<ConversationMessageEntity>> {
+        return voiceDao.searchAllMessages(query)
+    }
+
+    suspend fun deleteMessage(messageId: Long) {
+        voiceDao.deleteMessageById(messageId)
+    }
+
+    suspend fun setMessagePinned(messageId: Long, isPinned: Boolean) {
+        voiceDao.setMessagePinned(messageId, isPinned)
+    }
+
+    suspend fun clearMessagesForConversation(conversationId: String) {
+        voiceDao.deleteMessagesForConversation(conversationId)
+    }
+
     fun getMessagesForDialect(dialectId: String): Flow<List<ConversationMessageEntity>> {
         return voiceDao.getMessagesForDialect(dialectId)
+    }
+
+    suspend fun saveConversationMessage(
+        conversationId: String,
+        dialectId: String,
+        role: String,
+        text: String,
+        highlightedSlang: List<String> = emptyList(),
+        knowledge: com.example.data.knowledge.RealTimeKnowledgeResponse? = null
+    ) {
+        val sourcesStr = knowledge?.sources?.joinToString("|") { "${it.name} (${it.url})" } ?: ""
+        voiceDao.insertMessage(
+            ConversationMessageEntity(
+                conversationId = conversationId,
+                role = role,
+                text = text,
+                dialectId = dialectId,
+                highlightedSlangCsv = highlightedSlang.joinToString(","),
+                isRealTimeKnowledge = knowledge != null,
+                sourcesCsv = sourcesStr,
+                knowledgeFreshness = knowledge?.freshnessCategory?.name ?: "",
+                knowledgeTimestamp = knowledge?.timestamp ?: ""
+            )
+        )
+
+        // Update session preview & timestamp
+        val session = voiceDao.getSessionById(conversationId)
+        if (session != null) {
+            val preview = if (text.length > 60) text.take(60) + "..." else text
+            voiceDao.updateSession(
+                session.copy(
+                    updatedAt = System.currentTimeMillis(),
+                    lastMessagePreview = preview,
+                    messageCount = session.messageCount + 1
+                )
+            )
+        }
     }
 
     suspend fun saveMessage(dialectId: String, role: String, text: String, highlightedSlang: List<String> = emptyList()) {
@@ -144,6 +249,14 @@ class VoiceRepository(
                 highlightedSlangCsv = highlightedSlang.joinToString(",")
             )
         )
+    }
+
+    fun checkRealTimeKnowledge(
+        query: String,
+        dialect: RegionalDialect,
+        forceWeb: Boolean = false
+    ): com.example.data.knowledge.RealTimeKnowledgeResponse? {
+        return geminiService.getRealTimeKnowledge(query, dialect, forceWeb)
     }
 
     suspend fun clearMessagesForDialect(dialectId: String) {
@@ -223,7 +336,8 @@ class VoiceRepository(
         personality: VoicePersonality,
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
-        naturalMixingEnabled: Boolean = true
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = ""
     ): String {
         val currentStyle = voiceDao.getSpeakingStyleSync()
         return geminiService.generateVoiceResponse(
@@ -235,7 +349,30 @@ class VoiceRepository(
             speakingStyle = currentStyle,
             slangEnabled = slangEnabled,
             responseLength = responseLength,
-            naturalMixingEnabled = naturalMixingEnabled
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes
+        )
+    }
+
+    suspend fun previewPromptContext(
+        dialect: RegionalDialect,
+        strength: Float,
+        personality: VoicePersonality,
+        slangEnabled: Boolean,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = ""
+    ): String {
+        val currentStyle = voiceDao.getSpeakingStyleSync()
+        return geminiService.previewPromptContext(
+            dialect = dialect,
+            regionalStrength = strength,
+            personality = personality,
+            speakingStyle = currentStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes
         )
     }
 

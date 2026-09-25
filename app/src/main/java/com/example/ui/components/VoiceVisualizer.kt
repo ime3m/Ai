@@ -1,34 +1,26 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,13 +28,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.VoiceState
+import com.example.ui.theme.AppTheme
 
+/**
+ * Voice-Reactive Visualizer Component.
+ * Dynamically reacts to VoiceState (IDLE, LISTENING, PROCESSING, SPEAKING)
+ * with lightweight, accessible, hardware-friendly animations consuming AppTheme tokens.
+ */
 @Composable
 fun VoiceVisualizer(
     voiceState: VoiceState,
@@ -57,70 +59,215 @@ fun VoiceVisualizer(
     val isListening = voiceState == VoiceState.LISTENING
     val isSpeaking = voiceState == VoiceState.SPEAKING
     val isProcessing = voiceState == VoiceState.PROCESSING
+    val isIdle = voiceState == VoiceState.IDLE
 
-    val transition = rememberInfiniteTransition(label = "subtleBreath")
-    val pulseScale by transition.animateFloat(
+    // Lightweight animations running ONLY when active to preserve CPU and battery
+    val listeningTransition = rememberInfiniteTransition(label = "listeningPulse")
+    val pulseScale by listeningTransition.animateFloat(
         initialValue = 1.0f,
-        targetValue = if (isListening) 1.12f else 1.0f,
+        targetValue = if (isListening) 1.18f else 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulse"
+        label = "listeningPulseScale"
     )
+
+    val listeningAlpha by listeningTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = if (isListening) 0.1f else 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "listeningRingAlpha"
+    )
+
+    // Speaking glow animation
+    val speakingTransition = rememberInfiniteTransition(label = "speakingGlow")
+    val speakingGlowAlpha by speakingTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = if (isSpeaking) 0.70f else 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "speakingGlowAlpha"
+    )
+
+    // Processing rotation animation
+    val processingTransition = rememberInfiniteTransition(label = "processingSpin")
+    val processingRotation by processingTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (isProcessing) 360f else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "processingRotation"
+    )
+
+    // Speaking dynamic soundLevel adjustment so waveform moves naturally when speaking
+    val speakingWaveFactor by speakingTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = if (isSpeaking) 0.75f else 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "speakingWaveLevel"
+    )
+    val effectiveSoundLevel = when {
+        isListening -> soundLevel
+        isSpeaking -> if (soundLevel > 0.1f) soundLevel else speakingWaveFactor
+        else -> 0.0f
+    }
+
+    val micTokens = when {
+        isListening -> AppTheme.voice.listening
+        isProcessing -> AppTheme.voice.processing
+        isSpeaking -> AppTheme.voice.speaking
+        else -> AppTheme.voice.idle
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Status indicator
-        val statusText = when {
-            isListening -> "Listening..."
-            isProcessing -> "Thinking..."
-            isSpeaking -> "Speaking..."
-            else -> "Tap to speak"
+        // Status indicator row with animated activity badge
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(bottom = 6.dp)
+        ) {
+            when {
+                isListening -> {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(AppTheme.colors.status.error)
+                    )
+                    Text(
+                        text = "Listening...",
+                        style = AppTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppTheme.colors.status.error
+                    )
+                }
+                isProcessing -> {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = AppTheme.colors.accent.primary,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .rotate(processingRotation)
+                    )
+                    Text(
+                        text = "AI Thinking...",
+                        style = AppTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppTheme.colors.accent.primary
+                    )
+                }
+                isSpeaking -> {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(AppTheme.colors.accent.primary)
+                    )
+                    Text(
+                        text = "Speaking...",
+                        style = AppTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppTheme.colors.accent.primary
+                    )
+                }
+                else -> {
+                    Text(
+                        text = "Tap microphone to speak",
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.colors.text.muted
+                    )
+                }
+            }
         }
 
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (isListening || isSpeaking) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         // Sound-wave visualization component that animates in real-time
+        val wavePrimary = when {
+            isListening -> AppTheme.voice.waveform.listening
+            isProcessing -> AppTheme.voice.waveform.processing
+            isSpeaking -> AppTheme.voice.waveform.speaking
+            else -> AppTheme.voice.waveform.idle
+        }
+
         SoundWaveVisualizer(
-            soundLevel = soundLevel,
-            isRecording = isListening || isSpeaking,
+            soundLevel = effectiveSoundLevel,
+            isRecording = isListening || isSpeaking || isProcessing,
+            primaryColor = wavePrimary,
+            secondaryColor = AppTheme.colors.accent.secondary,
             waveStyle = SoundWaveStyle.DUAL,
-            height = 48.dp,
+            height = 46.dp,
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .padding(vertical = 2.dp)
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Large simple microphone button
+        // Large simple microphone button with state-specific reactions
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(80.dp)
+            modifier = Modifier.size(88.dp)
         ) {
-            // Subtle breathing outline when listening
+            // 1. Listening outer pulsing ring
             if (isListening) {
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
+                        .size(88.dp)
                         .scale(pulseScale)
-                        .border(
-                            width = 1.5.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                            shape = CircleShape
-                        )
+                        .clip(CircleShape)
+                        .background(micTokens.ring.copy(alpha = listeningAlpha))
                 )
             }
 
+            // 2. Speaking gentle ambient glow
+            if (isSpeaking) {
+                Box(
+                    modifier = Modifier
+                        .size(86.dp)
+                        .clip(CircleShape)
+                        .background(micTokens.glow.copy(alpha = speakingGlowAlpha))
+                )
+            }
+
+            // 3. Processing rotating arc spinner
+            if (isProcessing) {
+                Canvas(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .rotate(processingRotation)
+                ) {
+                    drawArc(
+                        color = micTokens.ring,
+                        startAngle = 0f,
+                        sweepAngle = 120f,
+                        useCenter = false,
+                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = micTokens.ring.copy(alpha = 0.3f),
+                        startAngle = 180f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+            }
+
+            // Primary interactive button
             Surface(
                 modifier = Modifier
                     .size(68.dp)
@@ -128,25 +275,45 @@ fun VoiceVisualizer(
                     .clickable(onClick = onMicClick)
                     .testTag("mic_toggle_button")
                     .border(
-                        width = 1.dp,
-                        color = if (isListening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        width = if (isListening || isSpeaking || isProcessing) 2.dp else 1.dp,
+                        color = micTokens.ring,
                         shape = CircleShape
                     ),
                 shape = CircleShape,
-                color = if (isListening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                color = micTokens.background
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = if (isListening) "Stop listening" else "Start talking",
-                        tint = if (isListening) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(28.dp)
-                    )
+                    when {
+                        isListening -> {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop listening",
+                                tint = micTokens.foreground,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        isProcessing -> {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "AI is thinking",
+                                tint = micTokens.foreground,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Start talking",
+                                tint = micTokens.foreground,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Minimal controls row: Stop, Replay, Interrupt, Mute
         Row(
@@ -163,34 +330,14 @@ fun VoiceVisualizer(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Pause,
-                        contentDescription = "Interrupt",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = "Interrupt speaking",
+                        tint = AppTheme.colors.accent.primary
                     )
                 }
             }
 
-            // Stop
-            if (isListening || isSpeaking) {
-                IconButton(
-                    onClick = {
-                        if (isListening) onMicClick() else onInterruptClick()
-                    },
-                    modifier = Modifier
-                        .size(40.dp)
-                        .testTag("stop_voice_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            // Replay
-            if (onReplayLast != null) {
+            // Replay Last Message
+            if (!isListening && onReplayLast != null) {
                 IconButton(
                     onClick = onReplayLast,
                     modifier = Modifier
@@ -198,26 +345,24 @@ fun VoiceVisualizer(
                         .testTag("replay_voice_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Replay",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.Default.Replay,
+                        contentDescription = "Replay last audio",
+                        tint = AppTheme.colors.text.secondary
                     )
                 }
             }
 
-            // Mute / Unmute
+            // Mute / Unmute Toggle
             IconButton(
                 onClick = onToggleMute,
                 modifier = Modifier
                     .size(40.dp)
-                    .testTag("mute_voice_button")
+                    .testTag("mute_toggle_button")
             ) {
                 Icon(
-                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (isMuted) "Unmute" else "Mute",
-                    tint = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    imageVector = if (isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                    contentDescription = if (isMuted) "Unmute audio" else "Mute audio",
+                    tint = if (isMuted) AppTheme.colors.status.error else AppTheme.colors.text.secondary
                 )
             }
         }

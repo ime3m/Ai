@@ -21,20 +21,40 @@ data class VoiceProfileEntity(
     val slangEnabled: Boolean = true,
     val naturalMixingEnabled: Boolean = true, // Code-switching ON/OFF
     val isDefault: Boolean = false,
-    val voiceSpeed: String = "Natural" // Slow, Normal, Fast, Natural
+    val voiceSpeed: String = "Natural", // Slow, Normal, Fast, Natural
+    val customPromptNotes: String = "" // Custom dialect & prompt context directives for Gemini
+)
+
+@Entity(tableName = "conversation_sessions")
+data class ConversationSessionEntity(
+    @PrimaryKey
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val dialectId: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val lastMessagePreview: String = "",
+    val messageCount: Int = 0,
+    val isPinned: Boolean = false,
+    val isArchived: Boolean = false
 )
 
 @Entity(tableName = "conversation_messages")
 data class ConversationMessageEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val conversationId: String = "",
     val profileId: Long = 0,
     val role: String, // "user", "assistant"
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
     val dialectId: String,
     val highlightedSlangCsv: String = "",
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    val isRealTimeKnowledge: Boolean = false,
+    val sourcesCsv: String = "",
+    val knowledgeFreshness: String = "", // STATIC, CURRENT, RECENT, HISTORICAL
+    val knowledgeTimestamp: String = ""
 )
 
 @Entity(tableName = "dictionary_entries")

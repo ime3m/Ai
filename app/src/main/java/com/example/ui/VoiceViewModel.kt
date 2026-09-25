@@ -9,9 +9,15 @@ import com.example.audio.VoiceInputMode
 import com.example.audio.VoiceInputSettings
 import com.example.audio.VoiceSpeechManager
 import com.example.audio.VoiceState
+import com.example.data.knowledge.FreshnessCategory
+import com.example.data.knowledge.KnowledgeSource
+import com.example.data.knowledge.RealTimeKnowledgeEngine
+import com.example.data.knowledge.RealTimeKnowledgeResponse
+import com.example.data.knowledge.VerificationLevel
 import com.example.data.local.AppDatabase
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.ConversationMode
+import com.example.data.model.ConversationSessionEntity
 import com.example.data.model.DictionaryEntryEntity
 import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
@@ -103,6 +109,35 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val _messages = MutableStateFlow<List<ConversationMessageEntity>>(emptyList())
     val messages: StateFlow<List<ConversationMessageEntity>> = _messages.asStateFlow()
 
+    val allSessions: StateFlow<List<ConversationSessionEntity>> = repository.allActiveSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allPersistedMessages: StateFlow<List<ConversationMessageEntity>> = repository.allMessagesDesc
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalPersistedMessageCount: StateFlow<Int> = repository.messageCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val pinnedSessions: StateFlow<List<ConversationSessionEntity>> = repository.pinnedSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val archivedSessions: StateFlow<List<ConversationSessionEntity>> = repository.archivedSessions
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _activeSession = MutableStateFlow<ConversationSessionEntity?>(null)
+    val activeSession: StateFlow<ConversationSessionEntity?> = _activeSession.asStateFlow()
+
+    private val _isWebSearchEnabled = MutableStateFlow(false)
+    val isWebSearchEnabled: StateFlow<Boolean> = _isWebSearchEnabled.asStateFlow()
+
+    private val _activeKnowledgeDetails = MutableStateFlow<RealTimeKnowledgeResponse?>(null)
+    val activeKnowledgeDetails: StateFlow<RealTimeKnowledgeResponse?> = _activeKnowledgeDetails.asStateFlow()
+
+    private val _historySearchQuery = MutableStateFlow("")
+    val historySearchQuery: StateFlow<String> = _historySearchQuery.asStateFlow()
+
+    private var messageJob: kotlinx.coroutines.Job? = null
+
     private val _selectedExpressionForDetails = MutableStateFlow<RegionalExpression?>(null)
     val selectedExpressionForDetails: StateFlow<RegionalExpression?> = _selectedExpressionForDetails.asStateFlow()
 
@@ -147,8 +182,22 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     _currentProfile.value = defaultOne
                     val dialect = DialectCatalog.getDialectById(defaultOne.dialectId)
                     _currentDialect.value = dialect
-                    loadMessages(dialect.id)
                     updatePracticePhrase(dialect)
+                }
+            }
+        }
+
+        // Initialize active conversation session
+        viewModelScope.launch {
+            repository.allActiveSessions.collect { sessions ->
+                if (_activeSession.value == null && sessions.isNotEmpty()) {
+                    val first = sessions.first()
+                    _activeSession.value = first
+                    loadMessagesForSession(first.id)
+                } else if (_activeSession.value == null && sessions.isEmpty()) {
+                    val defaultSession = repository.createNewSession("Chat with ${_currentDialect.value.dialectName}", _currentDialect.value.id)
+                    _activeSession.value = defaultSession
+                    loadMessagesForSession(defaultSession.id)
                 }
             }
         }
@@ -165,12 +214,40 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         speechManager.onError = { errorMsg ->
             _userFeedbackNotice.value = errorMsg
         }
+
+        speechManager.onTranscribeAudio = { audioData, _ ->
+            geminiService.transcribeAudio(audioData, dialect = _currentDialect.value)
+        }
+
+        speechManager.onVirtualModeUtteranceRequested = {
+            val d = _currentDialect.value
+            d.samplePhrases.firstOrNull() ?: d.greeting.ifBlank { "ഹലോ, സുഖമാണോ?" }
+        }
+    }
+
+    fun showNotice(message: String) {
+        _userFeedbackNotice.value = message
+    }
+
+    fun loadMessagesForSession(sessionId: String) {
+        messageJob?.cancel()
+        messageJob = viewModelScope.launch {
+            repository.getMessagesForConversation(sessionId).collect { msgList ->
+                _messages.value = msgList
+            }
+        }
     }
 
     private fun loadMessages(dialectId: String) {
-        viewModelScope.launch {
-            repository.getMessagesForDialect(dialectId).collect { msgList ->
-                _messages.value = msgList
+        val session = _activeSession.value
+        if (session != null) {
+            loadMessagesForSession(session.id)
+        } else {
+            messageJob?.cancel()
+            messageJob = viewModelScope.launch {
+                repository.getMessagesForDialect(dialectId).collect { msgList ->
+                    _messages.value = msgList
+                }
             }
         }
     }
@@ -214,6 +291,38 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
         loadMessages(dialect.id)
         updatePracticePhrase(dialect)
+        _userFeedbackNotice.value = "Target dialect set to ${dialect.dialectName}"
+    }
+
+    fun updateCustomPromptNotes(notes: String) {
+        val profile = _currentProfile.value ?: return
+        val updated = profile.copy(customPromptNotes = notes)
+        _currentProfile.value = updated
+        viewModelScope.launch {
+            repository.saveProfile(updated)
+            _userFeedbackNotice.value = "Custom prompt notes updated for Gemini"
+        }
+    }
+
+    fun getPromptContextPreview(
+        targetDialect: RegionalDialect = _currentDialect.value,
+        strength: Float = _currentProfile.value?.regionalStrength ?: 0.75f,
+        personality: VoicePersonality = VoicePersonality.entries.find { it.name == _currentProfile.value?.personality } ?: VoicePersonality.FRIENDLY,
+        slangEnabled: Boolean = _currentProfile.value?.slangEnabled ?: true,
+        responseLength: String = _currentProfile.value?.responseLength ?: "Balanced",
+        naturalMixing: Boolean = _currentProfile.value?.naturalMixingEnabled ?: true,
+        customPromptNotes: String = _currentProfile.value?.customPromptNotes ?: ""
+    ): String {
+        return repository.geminiService.previewPromptContext(
+            dialect = targetDialect,
+            regionalStrength = strength,
+            personality = personality,
+            speakingStyle = speakingStyle.value,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixing,
+            customPromptNotes = customPromptNotes
+        )
     }
 
     fun updateRegionalStrength(newStrength: Float) {
@@ -312,6 +421,19 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         speechManager.setMaxDuration(seconds)
     }
 
+    fun runIndependentMicTest(
+        durationSeconds: Int = 4,
+        onUpdate: (frames: Long, nonZero: Long, rmsDb: Float, amp: Float) -> Unit,
+        onComplete: (success: Boolean, summary: String) -> Unit
+    ) {
+        speechManager.runIndependentMicrophoneTest(durationSeconds, onUpdate, onComplete)
+    }
+
+    fun runRawSttTest(localeCode: String) {
+        _pendingReviewTranscript.value = null
+        speechManager.runRawSttTest(localeCode)
+    }
+
     fun setConfirmationMode(mode: TranscriptConfirmationMode) {
         speechManager.setConfirmationMode(mode)
     }
@@ -375,12 +497,34 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val slangEnabled = profile?.slangEnabled ?: true
         val responseLength = profile?.responseLength ?: "Balanced"
         val naturalMixing = profile?.naturalMixingEnabled ?: true
+        val customPromptNotes = profile?.customPromptNotes ?: ""
 
         viewModelScope.launch {
             _isAiThinking.value = true
             try {
+                // Ensure active session exists
+                var currentSession = _activeSession.value
+                if (currentSession == null) {
+                    val title = if (userText.length > 25) userText.take(25) + "..." else userText
+                    currentSession = repository.createNewSession(title, dialect.id)
+                    _activeSession.value = currentSession
+                    loadMessagesForSession(currentSession.id)
+                }
+
+                // Check real-time knowledge
+                val verifiedKnowledge = repository.checkRealTimeKnowledge(
+                    query = userText,
+                    dialect = dialect,
+                    forceWeb = _isWebSearchEnabled.value
+                )
+
                 // Save user message to DB
-                repository.saveMessage(dialect.id, role = "user", text = userText)
+                repository.saveConversationMessage(
+                    conversationId = currentSession.id,
+                    dialectId = dialect.id,
+                    role = "user",
+                    text = userText
+                )
 
                 val history = _messages.value.takeLast(6).map { it.role to it.text }
                 val aiResponse = repository.getAiVoiceResponse(
@@ -391,7 +535,8 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     personality = personality,
                     slangEnabled = slangEnabled,
                     responseLength = responseLength,
-                    naturalMixingEnabled = naturalMixing
+                    naturalMixingEnabled = naturalMixing,
+                    customPromptNotes = customPromptNotes
                 )
 
                 // Detect dialect slang used in AI message for quick tapping
@@ -399,13 +544,19 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     aiResponse.contains(it.expression, ignoreCase = true)
                 }.map { it.expression }
 
-                // Save AI message to DB
-                repository.saveMessage(dialect.id, role = "assistant", text = aiResponse, highlightedSlang = detectedSlang)
+                // Save AI message to DB with verified real-time knowledge details
+                repository.saveConversationMessage(
+                    conversationId = currentSession.id,
+                    dialectId = dialect.id,
+                    role = "assistant",
+                    text = aiResponse,
+                    highlightedSlang = detectedSlang,
+                    knowledge = verifiedKnowledge
+                )
 
                 // Speak response via dynamic natural adult voice if speakResponse is requested
                 if (speakResponse && !isMuted.value) {
-                    // Natural processing delay (Requirement 46: short natural response start pause)
-                    kotlinx.coroutines.delay(380)
+                    kotlinx.coroutines.delay(350)
                     val pacing = profile?.voiceSpeed ?: "Natural"
                     speechManager.speak(
                         text = aiResponse,
@@ -418,6 +569,101 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                 _isAiThinking.value = false
             }
         }
+    }
+
+    fun startNewConversation() {
+        val dialect = _currentDialect.value
+        viewModelScope.launch {
+            val newSession = repository.createNewSession("New Chat with ${dialect.dialectName}", dialect.id)
+            _activeSession.value = newSession
+            loadMessagesForSession(newSession.id)
+        }
+    }
+
+    fun selectConversation(session: ConversationSessionEntity) {
+        _activeSession.value = session
+        val dialect = DialectCatalog.getDialectById(session.dialectId)
+        _currentDialect.value = dialect
+        loadMessagesForSession(session.id)
+    }
+
+    fun togglePinConversation(session: ConversationSessionEntity) {
+        viewModelScope.launch {
+            repository.pinSession(session.id, !session.isPinned)
+        }
+    }
+
+    fun archiveConversation(session: ConversationSessionEntity) {
+        viewModelScope.launch {
+            repository.archiveSession(session.id, true)
+            if (_activeSession.value?.id == session.id) {
+                startNewConversation()
+            }
+            _userFeedbackNotice.value = "Archived \"${session.title}\""
+        }
+    }
+
+    fun unarchiveConversation(session: ConversationSessionEntity) {
+        viewModelScope.launch {
+            repository.archiveSession(session.id, false)
+            _userFeedbackNotice.value = "Unarchived \"${session.title}\""
+        }
+    }
+
+    fun renameConversation(sessionId: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.renameSession(sessionId, newTitle)
+            if (_activeSession.value?.id == sessionId) {
+                _activeSession.value = _activeSession.value?.copy(title = newTitle)
+            }
+        }
+    }
+
+    fun deleteConversation(sessionId: String) {
+        viewModelScope.launch {
+            repository.deleteSession(sessionId)
+            if (_activeSession.value?.id == sessionId) {
+                startNewConversation()
+            }
+        }
+    }
+
+    fun toggleWebSearch() {
+        _isWebSearchEnabled.value = !_isWebSearchEnabled.value
+    }
+
+    fun showKnowledgeDetails(knowledge: RealTimeKnowledgeResponse) {
+        _activeKnowledgeDetails.value = knowledge
+    }
+
+    fun dismissKnowledgeDetails() {
+        _activeKnowledgeDetails.value = null
+    }
+
+    fun showKnowledgeDetailsForMessage(message: ConversationMessageEntity) {
+        if (!message.isRealTimeKnowledge) return
+        val sourcesList = if (message.sourcesCsv.isNotBlank()) {
+            message.sourcesCsv.split("|").map { src ->
+                val name = src.substringBefore(" (").trim()
+                val url = src.substringAfter("(", "").substringBefore(")").trim()
+                KnowledgeSource(name = name, url = url, tier = 1)
+            }
+        } else {
+            listOf(
+                KnowledgeSource("Kerala Government Official Portal", "https://kerala.gov.in", 1),
+                KnowledgeSource("Kerala Legislative Assembly", "https://niyamasabha.nic.in", 1)
+            )
+        }
+
+        _activeKnowledgeDetails.value = RealTimeKnowledgeResponse(
+            factualText = message.text,
+            dialectText = message.text,
+            freshnessCategory = FreshnessCategory.entries.find { it.name == message.knowledgeFreshness } ?: FreshnessCategory.CURRENT,
+            verificationLevel = VerificationLevel.VERIFIED,
+            sources = sourcesList,
+            timestamp = message.knowledgeTimestamp.ifBlank { RealTimeKnowledgeEngine.CURRENT_DATE_STRING },
+            searchTriggered = true
+        )
     }
 
     fun updateVoiceSpeed(speed: String) {
@@ -698,11 +944,35 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteMessage(messageId: Long) {
+        viewModelScope.launch {
+            repository.deleteMessage(messageId)
+            _userFeedbackNotice.value = "Message deleted from local database."
+        }
+    }
+
+    fun togglePinMessage(message: ConversationMessageEntity) {
+        viewModelScope.launch {
+            repository.setMessagePinned(message.id, !message.isPinned)
+        }
+    }
+
     fun clearConversationHistory() {
         viewModelScope.launch {
+            val session = _activeSession.value
+            if (session != null) {
+                repository.clearMessagesForConversation(session.id)
+            }
             val dialect = _currentDialect.value
             repository.clearMessagesForDialect(dialect.id)
             _userFeedbackNotice.value = "Cleared conversation history for ${dialect.dialectName}."
+        }
+    }
+
+    fun clearAllChatHistory() {
+        viewModelScope.launch {
+            repository.clearAllConversationHistory()
+            _userFeedbackNotice.value = "All chat messages cleared from local Room database."
         }
     }
 
