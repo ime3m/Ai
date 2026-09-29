@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -360,7 +360,7 @@ fun VoiceVisualizer(
                     .testTag("mute_toggle_button")
             ) {
                 Icon(
-                    imageVector = if (isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeMute else Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = if (isMuted) "Unmute audio" else "Mute audio",
                     tint = if (isMuted) AppTheme.colors.status.error else AppTheme.colors.text.secondary
                 )

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -58,6 +59,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
+import com.example.ui.components.AudioLevelIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -134,6 +136,7 @@ fun ChatScreen(
     val selectedExpression by viewModel.selectedExpressionForDetails.collectAsState()
     val isAiThinking by viewModel.isAiThinking.collectAsState()
     val soundLevel by viewModel.soundLevel.collectAsState()
+    val rmsDb by viewModel.rmsDb.collectAsState()
     val activeKnowledgeDetails by viewModel.activeKnowledgeDetails.collectAsState()
     val isWebSearchEnabled by viewModel.isWebSearchEnabled.collectAsState()
 
@@ -269,6 +272,7 @@ fun ChatScreen(
             onTextChanged = { textInput = it },
             voiceState = voiceState,
             soundLevel = soundLevel,
+            rmsDb = rmsDb,
             dialect = currentDialect,
             isWebSearchEnabled = isWebSearchEnabled,
             partialTranscript = partialTranscript,
@@ -402,6 +406,7 @@ private fun DynamicRegionalHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .testTag("chat_dynamic_header")
     ) {
@@ -1136,6 +1141,7 @@ private fun SimpleInputComposer(
     soundLevel: Float,
     dialect: RegionalDialect,
     isWebSearchEnabled: Boolean,
+    rmsDb: Float? = null,
     partialTranscript: String = "",
     onToggleWebSearch: () -> Unit,
     onMicClick: () -> Unit,
@@ -1178,25 +1184,6 @@ private fun SimpleInputComposer(
                     .fillMaxWidth()
                     .padding(bottom = 10.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (isProcessing) {
-                            "⏳ Processing speech with Gemini..."
-                        } else {
-                            "🎙 Listening in ${dialect.dialectName} (Tap stop when done)"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isProcessing) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
                 if (partialTranscript.isNotBlank() && isListening) {
                     Surface(
                         modifier = Modifier
@@ -1214,14 +1201,40 @@ private fun SimpleInputComposer(
                     }
                 }
 
-                SoundWaveVisualizer(
-                    soundLevel = soundLevel,
-                    isRecording = isListening,
-                    waveStyle = SoundWaveStyle.DUAL,
-                    barCount = 30,
-                    height = 40.dp,
-                    showLevelBadge = true
-                )
+                if (isListening) {
+                    AudioLevelIndicator(
+                        soundLevel = soundLevel,
+                        voiceState = voiceState,
+                        rmsDb = rmsDb,
+                        isListening = true,
+                        onMicClick = onMicClick,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⏳ Processing speech with Gemini...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    SoundWaveVisualizer(
+                        soundLevel = soundLevel,
+                        isRecording = false,
+                        waveStyle = SoundWaveStyle.DUAL,
+                        barCount = 30,
+                        height = 40.dp,
+                        showLevelBadge = true
+                    )
+                }
             }
         }
 

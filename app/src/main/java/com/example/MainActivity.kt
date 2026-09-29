@@ -2,30 +2,22 @@ package com.example
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,30 +26,40 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.VoiceViewModel
-import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.ExploreDialectsScreen
+import com.example.ui.screens.FuturisticMainScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.theme.MyApplicationTheme
 
-enum class AppDestination(val route: String, val label: String, val icon: ImageVector, val tag: String) {
-    CHAT("chat", "Chat", Icons.AutoMirrored.Filled.Chat, "nav_chat"),
-    HISTORY("history", "History", Icons.Default.History, "nav_history"),
-    EXPLORE("explore", "Explore", Icons.Default.Explore, "nav_explore"),
-    PROFILE("profile", "Profile", Icons.Default.Person, "nav_profile")
+enum class AppDestination(val route: String, val label: String, val tag: String) {
+    MAIN("main", "Home", "nav_chat"),
+    HISTORY("history", "History", "nav_history"),
+    EXPLORE("explore", "Explore", "nav_explore"),
+    PROFILE("profile", "Profile", "nav_profile")
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         setContent {
             MyApplicationTheme {
                 RegionalVoiceApp()
@@ -69,7 +71,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
     val context = LocalContext.current
-    var currentDestination by remember { mutableStateOf(AppDestination.CHAT) }
+    var currentDestination by remember { mutableStateOf(AppDestination.MAIN) }
     val snackbarHostState = remember { SnackbarHostState() }
     val userNotice by viewModel.userFeedbackNotice.collectAsState()
 
@@ -77,7 +79,7 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
-        // Permission result handled
+        // Handled
     }
 
     LaunchedEffect(Unit) {
@@ -101,68 +103,43 @@ fun RegionalVoiceApp(viewModel: VoiceViewModel = viewModel()) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        bottomBar = {
-            NavigationBar(
-                modifier = Modifier
-                    .testTag("main_bottom_nav"),
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp
-            ) {
-                AppDestination.entries.forEach { destination ->
-                    val isSelected = currentDestination == destination
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { currentDestination = destination },
-                        icon = {
-                            Icon(
-                                imageVector = destination.icon,
-                                contentDescription = destination.label
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = destination.label,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        modifier = Modifier.testTag(destination.tag)
-                    )
-                }
-            }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = Color.Transparent,
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.navigationBarsPadding()
+            )
         }
-    ) { innerPadding ->
+    ) { _ ->
         when (currentDestination) {
-            AppDestination.CHAT -> {
-                ChatScreen(
+            AppDestination.MAIN -> {
+                FuturisticMainScreen(
                     viewModel = viewModel,
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             AppDestination.HISTORY -> {
+                BackHandler { currentDestination = AppDestination.MAIN }
                 HistoryScreen(
                     viewModel = viewModel,
-                    onNavigateToChat = { currentDestination = AppDestination.CHAT }
+                    onNavigateToChat = { currentDestination = AppDestination.MAIN },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             AppDestination.EXPLORE -> {
+                BackHandler { currentDestination = AppDestination.MAIN }
                 ExploreDialectsScreen(
                     viewModel = viewModel,
-                    onStartVoiceChat = { currentDestination = AppDestination.CHAT },
-                    modifier = Modifier.padding(innerPadding)
+                    onStartVoiceChat = { currentDestination = AppDestination.MAIN },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             AppDestination.PROFILE -> {
+                BackHandler { currentDestination = AppDestination.MAIN }
                 ProfileScreen(
                     viewModel = viewModel,
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

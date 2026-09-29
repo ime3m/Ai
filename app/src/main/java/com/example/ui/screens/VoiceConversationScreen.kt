@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -57,6 +58,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.ui.components.AudioLevelIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -100,6 +102,7 @@ fun VoiceConversationScreen(
     val messages by viewModel.messages.collectAsState()
     val voiceState by viewModel.voiceState.collectAsState()
     val soundLevel by viewModel.soundLevel.collectAsState()
+    val rmsDb by viewModel.rmsDb.collectAsState()
     val isMuted by viewModel.isMuted.collectAsState()
     val partialTranscript by viewModel.partialTranscript.collectAsState()
     val selectedExpression by viewModel.selectedExpressionForDetails.collectAsState()
@@ -131,6 +134,7 @@ fun VoiceConversationScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             Row(
@@ -432,19 +436,34 @@ fun VoiceConversationScreen(
             ) { mode ->
                 when (mode) {
                     InputMode.VOICE -> {
-                        // Voice Mode: Large calm mic button + subtle controls
+                        // Voice Mode: Audio Level Indicator on Listening + Calm Voice Visualizer
                         val lastAiMessage = messages.findLast { it.role == "assistant" }
-                        VoiceVisualizer(
-                            voiceState = voiceState,
-                            soundLevel = soundLevel,
-                            isMuted = isMuted,
-                            onMicClick = { viewModel.toggleMic() },
-                            onInterruptClick = { viewModel.interruptAi() },
-                            onToggleMute = { viewModel.toggleMute() },
-                            onReplayLast = if (lastAiMessage != null) {
-                                { viewModel.speakText(lastAiMessage.text) }
-                            } else null
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (voiceState == VoiceState.LISTENING) {
+                                AudioLevelIndicator(
+                                    soundLevel = soundLevel,
+                                    voiceState = voiceState,
+                                    rmsDb = rmsDb,
+                                    isListening = true,
+                                    onMicClick = { viewModel.toggleMic() },
+                                    modifier = Modifier.padding(bottom = 12.dp)
+                                )
+                            }
+                            VoiceVisualizer(
+                                voiceState = voiceState,
+                                soundLevel = soundLevel,
+                                isMuted = isMuted,
+                                onMicClick = { viewModel.toggleMic() },
+                                onInterruptClick = { viewModel.interruptAi() },
+                                onToggleMute = { viewModel.toggleMute() },
+                                onReplayLast = if (lastAiMessage != null) {
+                                    { viewModel.speakText(lastAiMessage.text) }
+                                } else null
+                            )
+                        }
                     }
 
                     InputMode.WRITE -> {

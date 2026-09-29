@@ -84,6 +84,8 @@ fun RegionalSettingsSheet(
     sheetState: SheetState,
     profile: VoiceProfileEntity?,
     currentDialect: RegionalDialect? = null,
+    activeRegionProfile: com.example.data.regional.RegionalProfile? = null,
+    onOpenRegionSelector: () -> Unit = {},
     onSelectDialect: (RegionalDialect) -> Unit = {},
     onOpenHierarchicalDrillDown: () -> Unit = {},
     onStrengthChange: (Float) -> Unit,
@@ -149,6 +151,74 @@ fun RegionalSettingsSheet(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =================================================================
+            // PRIMARY: REGION & VOICE CONFIGURATION
+            // =================================================================
+            val region = activeRegionProfile ?: com.example.data.regional.RegionalProfileRegistry.KERALA
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenRegionSelector() }
+                    .testTag("settings_region_voice_card"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(text = region.flagEmoji, fontSize = 28.sp)
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Region & Voice",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = region.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${region.languages.joinToString(" • ")} • Tap to switch region",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.Place,
+                        contentDescription = "Switch Region",
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 }

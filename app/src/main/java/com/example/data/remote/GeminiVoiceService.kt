@@ -4,6 +4,10 @@ import android.util.Log
 import com.example.BuildConfig
 import com.example.data.knowledge.RealTimeKnowledgeEngine
 import com.example.data.knowledge.RealTimeKnowledgeResponse
+import com.example.data.location.LocationExtractor
+import com.example.data.location.QueryContext
+import com.example.data.location.UserLocation
+import com.example.data.model.AIRequest
 import com.example.data.model.LocalSayingResult
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
@@ -39,8 +43,58 @@ class GeminiVoiceService {
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-    private val modelName = "gemini-3.5-flash"
-    private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+    private val candidateModels = listOf(
+        "gemini-3.5-flash",
+        "gemini-flash-latest",
+        "gemini-3.1-flash-lite-preview"
+    )
+    private val modelCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun getAvailableModels(): List<String> {
+        val now = System.currentTimeMillis()
+        val available = candidateModels.filter { model ->
+            val cooldownUntil = modelCooldowns[model] ?: 0L
+            now > cooldownUntil
+        }
+        return if (available.isNotEmpty()) available else candidateModels
+    }
+
+    private fun markModelRateLimited(model: String, cooldownSeconds: Long = 60) {
+        modelCooldowns[model] = System.currentTimeMillis() + (cooldownSeconds * 1000)
+    }
+
+    private fun getModelUrl(model: String): String {
+        return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+    }
+
+    private fun executeGeminiPost(
+        requestJson: JSONObject,
+        apiKey: String
+    ): JSONObject? {
+        val models = getAvailableModels()
+        for (model in models) {
+            try {
+                val request = Request.Builder()
+                    .url("${getModelUrl(model)}?key=$apiKey")
+                    .post(requestJson.toString().toRequestBody(jsonMediaType))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    return JSONObject(body)
+                } else if (response.code == 429) {
+                    markModelRateLimited(model, 60)
+                    Log.w("GeminiVoiceService", "Model $model quota/rate limited (429). Trying next model...")
+                } else {
+                    Log.w("GeminiVoiceService", "Model $model returned error ${response.code}: ${sanitizeForLogs(body)}")
+                }
+            } catch (e: Exception) {
+                Log.w("GeminiVoiceService", "Model $model execution failed", e)
+            }
+        }
+        return null
+    }
 
     private val _latestTrace = MutableStateFlow<AiResponseTrace?>(null)
     val latestTrace: StateFlow<AiResponseTrace?> = _latestTrace.asStateFlow()
@@ -94,34 +148,53 @@ class GeminiVoiceService {
                 put("contents", contentsArray)
             }
 
-            val request = Request.Builder()
-                .url("$baseUrl?key=$apiKey")
-                .post(jsonBody.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e("GeminiVoiceService", "Transcription failed with code: ${response.code}")
-                    return@withContext null
+            val root = executeGeminiPost(jsonBody, apiKey) ?: return@withContext null
+            val candidates = root.optJSONArray("candidates")
+            if (candidates != null && candidates.length() > 0) {
+                val candidate = candidates.getJSONObject(0)
+                val content = candidate.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                if (parts != null && parts.length() > 0) {
+                    val transcribed = parts.getJSONObject(0).optString("text", "").trim()
+                    return@withContext transcribed.ifBlank { null }
                 }
-                val body = response.body?.string() ?: return@withContext null
-                val root = JSONObject(body)
-                val candidates = root.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val candidate = candidates.getJSONObject(0)
-                    val content = candidate.optJSONObject("content")
-                    val parts = content?.optJSONArray("parts")
-                    if (parts != null && parts.length() > 0) {
-                        val transcribed = parts.getJSONObject(0).optString("text", "").trim()
-                        return@withContext transcribed.ifBlank { null }
-                    }
-                }
-                null
             }
+            null
         } catch (e: Exception) {
             Log.e("GeminiVoiceService", "Error during Gemini audio transcription", e)
             null
         }
+    }
+
+    suspend fun generateVoiceResponse(
+        request: AIRequest,
+        regionalStrength: Float = 0.75f,
+        personality: VoicePersonality = VoicePersonality.FRIENDLY,
+        speakingStyle: SpeakingStylePreferenceEntity? = null,
+        slangEnabled: Boolean = true,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "conv_default"
+    ): String {
+        return generateVoiceResponse(
+            userMessage = request.message,
+            conversationHistory = request.conversationHistory,
+            dialect = request.regionalProfile.toRegionalDialect(),
+            regionalStrength = regionalStrength,
+            personality = personality,
+            speakingStyle = speakingStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes,
+            inputSource = inputSource,
+            conversationId = conversationId,
+            queryLocation = request.queryLocation,
+            userLocation = request.userLocation,
+            queryContext = request.queryContext
+        )
     }
 
     suspend fun generateVoiceResponse(
@@ -134,118 +207,227 @@ class GeminiVoiceService {
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
         naturalMixingEnabled: Boolean = true,
-        customPromptNotes: String = ""
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "conv_default",
+        queryLocation: String? = null,
+        userLocation: UserLocation = UserLocation(),
+        queryContext: QueryContext? = null
     ): String = withContext(Dispatchers.IO) {
-        val isTimeSensitive = RealTimeKnowledgeEngine.requiresRealTimeRetrieval(userMessage)
+        val messageId = "msg_${System.currentTimeMillis()}"
+
+        // Analyze query for geographic targets and user intent
+        val resolvedContext = queryContext ?: LocationExtractor.analyzeQuery(
+            query = userMessage,
+            conversationHistory = conversationHistory,
+            userLocation = userLocation
+        )
+        val targetLocation = queryLocation ?: resolvedContext.requestedLocation
+        val intent = resolvedContext.intent ?: UniversalReasoningEngine.classifyIntent(userMessage)
+
+        val isTimeSensitive = intent == UserIntent.CURRENT_INFORMATION ||
+                resolvedContext.isLocationDependentQuery ||
+                RealTimeKnowledgeEngine.requiresRealTimeRetrieval(userMessage)
+
         val verifiedKnowledge = if (isTimeSensitive) {
-            RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(userMessage, dialect)
+            RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(
+                query = userMessage,
+                dialect = dialect,
+                resolvedLocation = targetLocation,
+                userLocation = userLocation,
+                conversationHistory = conversationHistory
+            )
         } else null
 
         val apiKey = getApiKey()
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
-            if (verifiedKnowledge != null) {
-                return@withContext verifiedKnowledge.dialectText
-            }
-            return@withContext fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
-        }
+        var modelRequestCreated = false
+        var modelRequestSent = false
+        var modelResponseReceived = false
+        var rawResponse = ""
+        var regenerationTriggered = false
+        var regenerationReason = ""
+        var candidateAnswer: String? = null
 
-        try {
-            val systemPrompt = buildSystemPrompt(
-                dialect = dialect,
-                regionalStrength = regionalStrength,
-                personality = personality,
-                speakingStyle = speakingStyle,
-                slangEnabled = slangEnabled,
-                responseLength = responseLength,
-                naturalMixingEnabled = naturalMixingEnabled,
-                customPromptNotes = customPromptNotes,
-                groundingFact = verifiedKnowledge?.factualText
-            )
-            val requestJson = JSONObject()
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+            try {
+                modelRequestCreated = true
+                val systemPrompt = buildSystemPrompt(
+                    dialect = dialect,
+                    regionalStrength = regionalStrength,
+                    personality = personality,
+                    speakingStyle = speakingStyle,
+                    slangEnabled = slangEnabled,
+                    responseLength = responseLength,
+                    naturalMixingEnabled = naturalMixingEnabled,
+                    customPromptNotes = customPromptNotes,
+                    groundingFact = verifiedKnowledge?.factualText,
+                    intent = intent,
+                    queryLocation = targetLocation,
+                    userLocation = userLocation,
+                    queryContext = resolvedContext
+                )
+                val requestJson = JSONObject()
 
-            // System instruction
-            val sysInstructionObj = JSONObject()
-            val sysParts = JSONArray()
-            sysParts.put(JSONObject().put("text", systemPrompt))
-            sysInstructionObj.put("parts", sysParts)
-            requestJson.put("systemInstruction", sysInstructionObj)
+                // System instruction
+                val sysInstructionObj = JSONObject()
+                val sysParts = JSONArray()
+                sysParts.put(JSONObject().put("text", systemPrompt))
+                sysInstructionObj.put("parts", sysParts)
+                requestJson.put("systemInstruction", sysInstructionObj)
 
-            // Contents array
-            val contentsArray = JSONArray()
-            val recentHistory = conversationHistory.takeLast(6)
-            for ((role, text) in recentHistory) {
-                val turnObj = JSONObject()
-                val apiRole = if (role == "user") "user" else "model"
-                turnObj.put("role", apiRole)
-                val parts = JSONArray()
-                parts.put(JSONObject().put("text", text))
-                turnObj.put("parts", parts)
-                contentsArray.put(turnObj)
-            }
-
-            // Current message
-            val currentTurn = JSONObject()
-            currentTurn.put("role", "user")
-            val currentParts = JSONArray()
-            currentParts.put(JSONObject().put("text", userMessage))
-            currentTurn.put("parts", currentParts)
-            contentsArray.put(currentTurn)
-
-            requestJson.put("contents", contentsArray)
-
-            // Generation config
-            val config = JSONObject()
-            config.put("temperature", 0.75)
-            config.put("topP", 0.95)
-            requestJson.put("generationConfig", config)
-
-            val request = Request.Builder()
-                .url("$baseUrl?key=$apiKey")
-                .post(requestJson.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            val response = okHttpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-
-            if (!response.isSuccessful) {
-                Log.e("GeminiVoiceService", "API error: ${response.code} $responseBody")
-                // Graceful 429 quota exhaustion shield & fallback to verified real-time knowledge
-                if (verifiedKnowledge != null) {
-                    return@withContext verifiedKnowledge.dialectText
+                // Contents array
+                val contentsArray = JSONArray()
+                val recentHistory = conversationHistory.takeLast(6)
+                for ((role, text) in recentHistory) {
+                    val turnObj = JSONObject()
+                    val apiRole = if (role == "user") "user" else "model"
+                    turnObj.put("role", apiRole)
+                    val parts = JSONArray()
+                    parts.put(JSONObject().put("text", text))
+                    turnObj.put("parts", parts)
+                    contentsArray.put(turnObj)
                 }
-                return@withContext fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
-            }
 
-            val parsed = JSONObject(responseBody)
-            val candidates = parsed.optJSONArray("candidates")
-            val firstCandidate = candidates?.optJSONObject(0)
-            val content = firstCandidate?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
-            val text = parts?.optJSONObject(0)?.optString("text")
+                // Current message - explicitly prioritized with intent
+                val currentTurn = JSONObject()
+                currentTurn.put("role", "user")
+                val currentParts = JSONArray()
+                currentParts.put(JSONObject().put("text", "[PRIMARY USER REQUEST - INTENT: ${intent.name}]\n$userMessage"))
+                currentTurn.put("parts", currentParts)
+                contentsArray.put(currentTurn)
 
-            if (!text.isNullOrBlank()) {
-                cleanVoiceResponse(text)
-            } else if (verifiedKnowledge != null) {
-                verifiedKnowledge.dialectText
-            } else {
-                fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
+                requestJson.put("contents", contentsArray)
+
+                // Generation config
+                val config = JSONObject()
+                config.put("temperature", 0.70)
+                config.put("topP", 0.95)
+                requestJson.put("generationConfig", config)
+
+                val modelsToTry = getAvailableModels()
+                for (model in modelsToTry) {
+                    val request = Request.Builder()
+                        .url("${getModelUrl(model)}?key=$apiKey")
+                        .post(requestJson.toString().toRequestBody(jsonMediaType))
+                        .build()
+
+                    modelRequestSent = true
+                    try {
+                        val response = okHttpClient.newCall(request).execute()
+                        val responseBody = response.body?.string() ?: ""
+
+                        if (response.isSuccessful) {
+                            modelResponseReceived = true
+                            val parsed = JSONObject(responseBody)
+                            val candidates = parsed.optJSONArray("candidates")
+                            val firstCandidate = candidates?.optJSONObject(0)
+                            val content = firstCandidate?.optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+                            val text = parts?.optJSONObject(0)?.optString("text")
+
+                            if (!text.isNullOrBlank()) {
+                                rawResponse = text
+                                val cleaned = cleanVoiceResponse(text)
+                                val isGeneric = ResponseQualitySystem.isGenericOrRepetitive(cleaned, userMessage, intent)
+                                val isRelevant = ResponseQualitySystem.checkRelevance(userMessage, cleaned, intent)
+
+                                if (!isGeneric && isRelevant) {
+                                    candidateAnswer = cleaned
+                                    break // Success!
+                                } else {
+                                    regenerationTriggered = true
+                                    regenerationReason = if (isGeneric) "Blocked generic conversational filler" else "Failed question-answer relevance check"
+                                    Log.w("GeminiVoiceService", "Model $model output rejected: reason='$regenerationReason'. Raw was: '$cleaned'")
+                                    break
+                                }
+                            }
+                        } else if (response.code == 429) {
+                            markModelRateLimited(model, 60)
+                            Log.w("GeminiVoiceService", "Model $model quota exceeded / rate limited (429). Attempting fallback model...")
+                            continue
+                        } else {
+                            Log.w("GeminiVoiceService", "API error for model $model: ${response.code} ${sanitizeForLogs(responseBody)}")
+                            continue
+                        }
+                    } catch (e: Exception) {
+                        Log.w("GeminiVoiceService", "Model $model network execution failed", e)
+                        continue
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("GeminiVoiceService", "Call failed", e)
             }
-        } catch (e: Exception) {
-            Log.e("GeminiVoiceService", "Call failed", e)
+        }
+
+        // If candidateAnswer is null (API error, 429 quota exhaustion, offline, or rejected as generic filler)
+        val finalResponse = if (!candidateAnswer.isNullOrBlank()) {
+            candidateAnswer
+        } else {
             if (verifiedKnowledge != null) {
                 verifiedKnowledge.dialectText
             } else {
-                fallbackRegionalResponse(userMessage, dialect, regionalStrength, personality)
+                UniversalReasoningEngine.generateKnowledgeAnswer(
+                    query = userMessage,
+                    intent = intent,
+                    dialect = dialect,
+                    strength = regionalStrength,
+                    personality = personality,
+                    history = conversationHistory,
+                    queryLocation = targetLocation,
+                    userLocation = userLocation
+                )
             }
         }
+
+        ResponseQualitySystem.recordResponse(finalResponse)
+        val isFinalRelevant = ResponseQualitySystem.checkRelevance(userMessage, finalResponse, intent)
+
+        val trace = AiResponseTrace(
+            messageId = messageId,
+            conversationId = conversationId,
+            userInput = userMessage,
+            inputSource = inputSource,
+            detectedLanguage = dialect.language,
+            detectedRegion = "${dialect.cityOrArea}, ${dialect.region}",
+            detectedIntent = intent,
+            currentInformationRequired = isTimeSensitive,
+            retrievalUsed = verifiedKnowledge != null,
+            retrievalSources = verifiedKnowledge?.sources?.map { it.name } ?: emptyList(),
+            systemPromptVersion = "v2.0-IntentFirst",
+            modelRequestCreated = modelRequestCreated,
+            modelRequestSent = modelRequestSent,
+            modelResponseReceived = modelResponseReceived,
+            rawAiResponse = rawResponse.ifBlank { finalResponse },
+            responseLength = finalResponse.length,
+            genericResponseDetected = regenerationTriggered,
+            relevanceCheck = if (isFinalRelevant) "PASS" else "FAIL",
+            regenerationTriggered = regenerationTriggered,
+            regenerationReason = regenerationReason,
+            finalResponse = finalResponse,
+            ttsStarted = true
+        )
+        _latestTrace.value = trace
+
+        return@withContext finalResponse
     }
 
     fun getRealTimeKnowledge(
         query: String,
         dialect: RegionalDialect,
-        forceWeb: Boolean = false
+        forceWeb: Boolean = false,
+        resolvedLocation: String? = null,
+        userLocation: UserLocation = UserLocation(),
+        history: List<Pair<String, String>> = emptyList()
     ): RealTimeKnowledgeResponse? {
-        return RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(query, dialect, forceWeb)
+        val targetLocation = resolvedLocation ?: LocationExtractor.extractExplicitLocation(query, query.lowercase().trim())
+        return RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(
+            query = query,
+            dialect = dialect,
+            forceWeb = forceWeb,
+            resolvedLocation = targetLocation,
+            userLocation = userLocation,
+            conversationHistory = history
+        )
     }
 
     suspend fun translateSlang(
@@ -291,16 +473,8 @@ class GeminiVoiceService {
             config.put("responseMimeType", "application/json")
             requestJson.put("generationConfig", config)
 
-            val request = Request.Builder()
-                .url("$baseUrl?key=$apiKey")
-                .post(requestJson.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            val response = okHttpClient.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-
-            if (response.isSuccessful) {
-                val root = JSONObject(body)
+            val root = executeGeminiPost(requestJson, apiKey)
+            if (root != null) {
                 val rawText = root.optJSONArray("candidates")?.optJSONObject(0)
                     ?.optJSONObject("content")?.optJSONArray("parts")
                     ?.optJSONObject(0)?.optString("text") ?: ""
@@ -377,14 +551,8 @@ class GeminiVoiceService {
                 config.put("responseMimeType", "application/json")
                 requestJson.put("generationConfig", config)
 
-                val request = Request.Builder()
-                    .url("$baseUrl?key=$apiKey")
-                    .post(requestJson.toString().toRequestBody(jsonMediaType))
-                    .build()
-
-                val res = okHttpClient.newCall(request).execute()
-                if (res.isSuccessful) {
-                    val raw = JSONObject(res.body?.string() ?: "")
+                val raw = executeGeminiPost(requestJson, apiKey)
+                if (raw != null) {
                     val text = raw.optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                         ?.optJSONObject(0)?.optString("text") ?: ""
@@ -459,14 +627,8 @@ class GeminiVoiceService {
                 config.put("responseMimeType", "application/json")
                 requestJson.put("generationConfig", config)
 
-                val request = Request.Builder()
-                    .url("$baseUrl?key=$apiKey")
-                    .post(requestJson.toString().toRequestBody(jsonMediaType))
-                    .build()
-
-                val res = okHttpClient.newCall(request).execute()
-                if (res.isSuccessful) {
-                    val raw = JSONObject(res.body?.string() ?: "")
+                val raw = executeGeminiPost(requestJson, apiKey)
+                if (raw != null) {
                     val text = raw.optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                         ?.optJSONObject(0)?.optString("text") ?: ""
@@ -513,94 +675,30 @@ class GeminiVoiceService {
         naturalMixingEnabled: Boolean = true,
         customPromptNotes: String = "",
         groundingFact: String? = null,
-        intent: UserIntent? = null
+        intent: UserIntent? = null,
+        queryLocation: String? = null,
+        userLocation: UserLocation? = null,
+        queryContext: QueryContext? = null
     ): String {
-        val strengthDescription = when {
-            regionalStrength < 0.35f -> "Mild regional flavor: Mostly standard ${dialect.language}, with subtle regional cadence and minimal colloquialisms."
-            regionalStrength < 0.70f -> "Moderate regional style: Authentic blend of standard language and characteristic ${dialect.dialectName} vocabulary, idioms, and local expressions."
-            else -> "Strong authentic regional style: Deeply steeped in ${dialect.cityOrArea} (${dialect.dialectName}) vocabulary, colloquialisms, idioms, sentence rhythm, and local banter, while staying understandable."
-        }
+        val regionProfile = com.example.data.regional.RegionalProfileRegistry.getProfileById(dialect.region.lowercase())
+            .let { if (it.id == "kerala" && dialect.country != "India") com.example.data.regional.RegionalProfileRegistry.allProfiles.find { p -> p.defaultDialectId == dialect.id } ?: it else it }
 
-        val slangInstruction = if (slangEnabled) {
-            "Naturally incorporate authentic regional slang expressions (such as: ${dialect.typicalExpressions.joinToString { it.expression }}). Use slang organically in context, never forced or random."
-        } else {
-            "Avoid heavy slang, but maintain the regional phonetics, sentence rhythm, and polite local mannerisms."
-        }
-
-        val lengthInstruction = when (responseLength.lowercase()) {
-            "short" -> "RESPONSE LENGTH: Very concise and punchy (1-2 sentences maximum)."
-            "detailed" -> "RESPONSE LENGTH: Rich and descriptive (3-5 sentences), providing thoughtful context."
-            else -> "RESPONSE LENGTH: Balanced conversational flow (2-3 sentences)."
-        }
-
-        val mixingInstruction = if (naturalMixingEnabled) {
-            "LANGUAGE MIXING: Naturally support casual code-switching (${dialect.codeSwitchingDescription}) when customary in casual local conversations, without forcing awkward translations for everyday terms."
-        } else {
-            "LANGUAGE MIXING: Prefer staying within ${dialect.language} without excessive loanwords."
-        }
-
-        val customDirectivesSection = if (customPromptNotes.isNotBlank()) {
-            """
-            USER CUSTOM DIALECT & STYLE DIRECTIVES:
-            - User specified prompt context: $customPromptNotes
-            - Prioritize this conversational nuance while maintaining the target dialect cadence.
-            """.trimIndent()
-        } else ""
-
-        val personalStyleSection = if (speakingStyle != null && speakingStyle.learningEnabled) {
-            """
-            USER SPEAKING STYLE PREFERENCES (Opt-in Personalization):
-            - Preferred tone: ${speakingStyle.preferredTone}
-            - Response length: ${speakingStyle.preferredResponseLength}
-            - Sentence style: ${speakingStyle.sentenceStyle}
-            - Preferred code-switching: ${speakingStyle.codeSwitchingHabit}
-            - Frequently used expressions to harmonize with: ${speakingStyle.frequentlyUsedExpressionsCsv.ifEmpty { "None specified yet" }}
-            """.trimIndent()
-        } else {
-            "Personalization: Standard regional persona."
-        }
-
-        return """
-            You are a real, natural adult native conversational partner from ${dialect.cityOrArea}, in ${dialect.region}, ${dialect.country}.
-            Language: ${dialect.language}
-            Dialect / Regional Speaking Style: ${dialect.dialectName}
-            
-            DIALECT LEVEL: $strengthDescription
-            PERSONALITY: ${personality.title} - ${personality.description}
-            ${personality.systemPromptGuidance}
-            
-            $slangInstruction
-            $lengthInstruction
-            $mixingInstruction
-            $customDirectivesSection
-            
-            CRITICAL CONVERSATIONAL VOICE BEHAVIOR (MANDATORY):
-            - You are an adult human having a real, warm spoken conversation with another adult over tea or on a phone call.
-            - NEVER sound like a child reading a textbook aloud or a student reciting an essay.
-            - NEVER sound like a formal robotic voice assistant reading generated text.
-            - NEVER sound like an audiobook narrator or television newsreader.
-            - Speak as if you are thinking and responding naturally in real-time.
-            - Use natural speaking rhythm, natural breath pauses (using ellipses '...' or commas), and authentic conversational flow.
-            - For Malayalam: Speak naturally like an adult from ${dialect.cityOrArea}. Use authentic local conversational rhythm, colloquial discourse markers (like 'ട്ടോ', 'അല്ലേ', 'പിന്നെന്താ', 'ഗഡീ', 'മച്ചാനേ', 'അതൊക്കെ അത്രേ ഉള്ളൂ', 'എന്നാ പിന്നെ', 'ശരി ശരി'), and natural conversational contractions. NEVER use textbook formal greetings like "നമസ്കാരം, ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?".
-            - For English / other languages: Use natural contractions (I'm, that's, gonna, you're), spoken pauses, and colloquial flow.
-            - Real people speak in comfortable, breath-paced clauses, not giant uninterrupted monologues.
-            - ABSOLUTELY NO markdown symbols (*, #, _, ~, `, >), bullet points, numbered lists, emojis, or stage directions like [Laughs] or (smiles). Output ONLY pure, spoken dialogue.
-            
-            AUTOMATIC DIALECT & CODE-SWITCHING UNDERSTANDING:
-            - The user may speak with local accents, slang, abbreviations, or mixed code-switching.
-            - Always understand the intended meaning from context even if colloquial or informal.
-            - Respond naturally in ${dialect.dialectName} with authentic human warmth.
-            
-            $personalStyleSection
-            
-            REAL-TIME GROUNDING & TIME CONTEXT (MANDATORY):
-            - Current Date: September 24, 2026.
-            - You must always be aware that the current year is 2026.
-            - STALE KNOWLEDGE PROTECTION: Never confuse pre-trained static knowledge with what is true today.
-            - Fact verification: As of September 2026, the Chief Minister of Kerala is V. D. Satheesan (Official sources: Kerala Government Portal, Kerala Legislative Assembly). You must NEVER claim that Pinarayi Vijayan is the current Chief Minister.
-            ${if (!groundingFact.isNullOrBlank()) "- GROUNDED FACT FOR THIS QUERY: $groundingFact. You must incorporate this exact verified fact into your regional dialect response." else ""}
-            - Maintain separation between factual truth and dialect style: The factual answer must be 100% accurate, while the expression matches the natural local cadence of ${dialect.cityOrArea}.
-        """.trimIndent()
+        return com.example.data.ai.AIConfig.buildSystemInstruction(
+            regionalProfile = regionProfile,
+            dialect = dialect,
+            strength = regionalStrength,
+            personality = personality,
+            speakingStyle = speakingStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes,
+            groundingFact = groundingFact,
+            intent = intent,
+            queryLocation = queryLocation,
+            userLocation = userLocation,
+            queryContext = queryContext
+        )
     }
 
     fun previewPromptContext(
@@ -611,7 +709,9 @@ class GeminiVoiceService {
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
         naturalMixingEnabled: Boolean = true,
-        customPromptNotes: String = ""
+        customPromptNotes: String = "",
+        queryLocation: String? = null,
+        userLocation: UserLocation? = null
     ): String {
         return buildSystemPrompt(
             dialect = dialect,
@@ -622,7 +722,9 @@ class GeminiVoiceService {
             responseLength = responseLength,
             naturalMixingEnabled = naturalMixingEnabled,
             customPromptNotes = customPromptNotes,
-            groundingFact = null
+            groundingFact = null,
+            queryLocation = queryLocation,
+            userLocation = userLocation
         )
     }
 
@@ -665,15 +767,8 @@ class GeminiVoiceService {
                 config.put("responseMimeType", "application/json")
                 requestJson.put("generationConfig", config)
 
-                val request = Request.Builder()
-                    .url("$baseUrl?key=$apiKey")
-                    .post(requestJson.toString().toRequestBody(jsonMediaType))
-                    .build()
-
-                val response = okHttpClient.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    val root = JSONObject(body)
+                val root = executeGeminiPost(requestJson, apiKey)
+                if (root != null) {
                     val rawText = root.optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                         ?.optJSONObject(0)?.optString("text") ?: ""
@@ -777,15 +872,8 @@ class GeminiVoiceService {
                 config.put("responseMimeType", "application/json")
                 requestJson.put("generationConfig", config)
 
-                val request = Request.Builder()
-                    .url("$baseUrl?key=$apiKey")
-                    .post(requestJson.toString().toRequestBody(jsonMediaType))
-                    .build()
-
-                val response = okHttpClient.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    val root = JSONObject(body)
+                val root = executeGeminiPost(requestJson, apiKey)
+                if (root != null) {
                     val rawText = root.optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                         ?.optJSONObject(0)?.optString("text") ?: ""
@@ -821,8 +909,12 @@ class GeminiVoiceService {
         )
     }
 
+    private fun sanitizeForLogs(text: String): String {
+        return text.replace(Regex("key=[A-Za-z0-9_\\-]+"), "key=REDACTED")
+    }
+
     private fun cleanVoiceResponse(raw: String): String {
-        return raw
+        var cleaned = raw
             // Remove markdown syntax
             .replace(Regex("[*#_~`>]"), "")
             // Remove bracketed/parenthetical actions like [Laughs], (smiles)
@@ -833,6 +925,21 @@ class GeminiVoiceService {
             .replace("\"", "")
             .replace(Regex("\\s+"), " ")
             .trim()
+
+        // Strip repetitive canned opening confirmations to keep conversation natural
+        val repetitiveOpenings = listOf(
+            Regex("^ശരിയാണ്,\\s*നിങ്ങൾ പറഞ്ഞത് എനിക്ക് നന്നായി മനസ്സിലായി[.,!]?\\s*", RegexOption.IGNORE_CASE),
+            Regex("^ശരിയാണ്,\\s*നിങ്ങൾ പറഞ്ഞത്[.,!]?\\s*", RegexOption.IGNORE_CASE),
+            Regex("^താൻ പറഞ്ഞത് എനിക്ക് ക്ലിയറായി മനസ്സിലായി[.,!]?\\s*", RegexOption.IGNORE_CASE),
+            Regex("^നിങ്ങൾ പറഞ്ഞത് കറക്ടാണ് കേട്ടോ[.,!]?\\s*", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in repetitiveOpenings) {
+            val replaced = cleaned.replaceFirst(pattern, "")
+            if (replaced.isNotBlank()) {
+                cleaned = replaced.trim()
+            }
+        }
+        return cleaned
     }
 
     private fun fallbackRegionalResponse(
@@ -841,76 +948,15 @@ class GeminiVoiceService {
         strength: Float,
         personality: VoicePersonality
     ): String {
-        val lower = message.lowercase()
-        return when {
-            dialect.id.contains("kozhikode") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "ഹായ് ചങ്ങായി, സുഖല്ലേ? ഞാനിവിടെ സുലൈമാനിയും കുടിച്ച് ഇരിക്കുവാ... എന്തൊക്കെയുണ്ട് വിശേഷങ്ങൾ?"
-                lower.contains("ഭക്ഷണം") || lower.contains("ബിരിയാണി") || lower.contains("tea") ->
-                    "നമ്മളെ കോഴിക്കോടൻ ദം ബിരിയാണിയും നല്ലൊരു സുലൈമാനിയും കുടിച്ചാൽ പിന്നെ വേറെന്താ വേണ്ടത്! എന്താ ഇപ്പൊ കഴിക്കാൻ പ്ലാൻ?"
-                else ->
-                    "നല്ല കാര്യാണ് ചങ്ങായി പറഞ്ഞത് ട്ടോ! എനിക്കിത് ശരിക്കും ഇഷ്ടായി, ബാക്കി കൂടി പറയൂ."
-            }
-            dialect.id.contains("malappuram") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "ഹലോ മച്ചാനേ, സുഖം തന്നെയല്ലേ? എവിടെയാ ഇപ്പൊ ഉള്ളത്... എന്ത് വിശേഷം?"
-                else ->
-                    "അതങ്ങ് ഏറ്റു മച്ചാനേ! നല്ല രസമുള്ള കാര്യമാണല്ലോ പറഞ്ഞത്, കൂടുതൽ പറയൂ കേൾക്കട്ടെ."
-            }
-            dialect.id.contains("thrissur") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "പിന്നെന്തൂട്ടാ ഗഡീ വിശേഷം! സുഖല്ലേ തനിക്ക്? ഇവിടെ അടിപൊളി മൂഡാണ് ട്ടോ."
-                else ->
-                    "എന്തൂട്ടാ ഗഡീ സംഭവം! കേട്ടിട്ട് നല്ല കാര്യമായി തോന്നുന്നുണ്ടല്ലോ, ബാക്കി കൂടി പറയൂ."
-            }
-            dialect.id.contains("trivandrum") || dialect.id.contains("thiruvananthapuram") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "നമസ്കാരം അണ്ണാ, സുഖല്ലേ? ഇവിടെ തമ്പാനൂരും കിഴക്കേകോട്ടയും ഒക്കെ നല്ല തിരക്കാണ്... എന്തൊക്കെയുണ്ട് കാര്യങ്ങൾ?"
-                else ->
-                    "ശരിയാ അണ്ണാ, നിങ്ങൾ പറഞ്ഞത് കറക്ടാണ് കേട്ടോ. എന്താ അടുത്ത പരിപാടി?"
-            }
-            dialect.id.contains("ernakulam") || dialect.id.contains("kochi") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "ഹേയ് ബ്രോ, സുഖല്ലേ? മെട്രോ നഗരത്തിൽ നല്ല മഴയും കാറ്റുമൊക്കെ ഉണ്ട്... എന്തൊക്കെയുണ്ട് കൊച്ചി വിശേഷങ്ങൾ?"
-                else ->
-                    "സീൻ ഇല്ല അളിയാ, സംഭവം കിടുവാണ്! താൻ പറഞ്ഞത് എനിക്ക് ക്ലിയറായി മനസ്സിലായി."
-            }
-            dialect.id.contains("kannur") -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "ഹലോ ചങ്ങായി, സുഖം തന്നെയല്ലേ? നാട്ടിലെന്താ ഇപ്പൊ വിശേഷങ്ങൾ... പറയൂ കേൾക്കട്ടെ."
-                else ->
-                    "അത് പൊളിച്ചു ട്ടോ! കണ്ണൂരിന്റെ ശൈലിയിൽ പറഞ്ഞാൽ പക്കാ സംഭവമാണ്."
-            }
-            dialect.id.contains("general") || dialect.language.equals("Malayalam", true) -> when {
-                lower.contains("സുഖ") || lower.contains("ഹലോ") || lower.contains("hello") ->
-                    "ഹേയ്, സുഖല്ലേ? എന്തൊക്കെയുണ്ട് പുതിയ വിശേഷങ്ങൾ... എന്താ ഇപ്പൊ ചെയ്യുന്നത്?"
-                else ->
-                    "ശരിയാണ്, നിങ്ങൾ പറഞ്ഞത് എനിക്ക് നന്നായി മനസ്സിലായി. തുടർന്ന് സംസാരിക്കാം, കൂടുതൽ പറയൂ."
-            }
-            dialect.id.contains("liverpool") -> when {
-                lower.contains("hello") || lower.contains("hi") || lower.contains("how are") ->
-                    "Alright kidda! How're you keeping? Proper lovely to chat with you today, lad."
-                lower.contains("food") || lower.contains("eat") || lower.contains("hungry") ->
-                    "Starving here too mate! Fancy nipping down for some proper scran?"
-                else ->
-                    "Boss that, lad! Straight facts. Tell us more about what you're thinking!"
-            }
-            dialect.id.contains("brooklyn") -> when {
-                lower.contains("hello") || lower.contains("hi") || lower.contains("how are") ->
-                    "Yo, what's good! How's your day going so far? Good to catch up with you."
-                else ->
-                    "Deadass, that's wild! You're speaking straight facts right now, tell me more."
-            }
-            dialect.id.contains("kuwait") -> when {
-                lower.contains("مرحبا") || lower.contains("شلونك") || lower.contains("hello") ->
-                    "هلا والله يا معود! شلونك وعساك طيب وبخير? حياك الله، نورتنا والله."
-                else ->
-                    "والله كلامك وايد زين وما تقصر يا خوي، تسلم والله."
-            }
-            else -> {
-                "${dialect.greeting} How are you doing today? Great to chat with you naturally in our local cadence."
-            }
-        }
+        val intent = UniversalReasoningEngine.classifyIntent(message)
+        return UniversalReasoningEngine.generateKnowledgeAnswer(
+            query = message,
+            intent = intent,
+            dialect = dialect,
+            strength = strength,
+            personality = personality,
+            history = emptyList()
+        )
     }
 
     private fun localSlangTranslate(

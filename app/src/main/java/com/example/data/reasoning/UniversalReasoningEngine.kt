@@ -273,7 +273,9 @@ object UniversalReasoningEngine {
         dialect: RegionalDialect,
         strength: Float,
         personality: VoicePersonality,
-        history: List<Pair<String, String>>
+        history: List<Pair<String, String>>,
+        queryLocation: String? = null,
+        userLocation: com.example.data.location.UserLocation = com.example.data.location.UserLocation()
     ): String {
         val lower = query.lowercase().trim()
 
@@ -283,8 +285,14 @@ object UniversalReasoningEngine {
             return formatWithRegionalStyle(calcResult, dialect, strength, personality)
         }
 
-        // 2. Real-time Knowledge (Weather, CM, Gold, Currency, News, Blasters)
-        val verifiedKnowledge = RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(query, dialect)
+        // 2. Real-time Knowledge (Weather, Time, Restaurants, CM, Gold, Currency, News)
+        val verifiedKnowledge = RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(
+            query = query,
+            dialect = dialect,
+            resolvedLocation = queryLocation,
+            userLocation = userLocation,
+            conversationHistory = history
+        )
         if (verifiedKnowledge != null) {
             return verifiedKnowledge.dialectText
         }

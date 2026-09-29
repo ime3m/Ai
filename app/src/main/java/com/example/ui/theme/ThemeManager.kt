@@ -45,7 +45,7 @@ class ThemeManager private constructor(context: Context) {
         AmoledTheme.definition.metadata.id to AmoledTheme.definition
     )
 
-    private var activeThemeId: String = prefs.getString(KEY_SELECTED_THEME, "midnight") ?: "midnight"
+    private var activeThemeId: String = prefs.getString(KEY_SELECTED_THEME, "light") ?: "light"
     private var isRegionalStyleEnabled: Boolean = prefs.getBoolean(KEY_REGIONAL_ENABLED, true)
 
     private val savedRegionalCode = prefs.getString(KEY_REGIONAL_CODE, "ml") ?: "ml"
@@ -103,11 +103,11 @@ class ThemeManager private constructor(context: Context) {
         setTheme("custom", isSystemInDark)
     }
 
-    fun resetToDefault(isSystemInDark: Boolean = true) {
+    fun resetToDefault(isSystemInDark: Boolean = false) {
         customPalette = CustomThemePalette()
         _customPaletteFlow.value = customPalette
         saveCustomPalette(customPalette)
-        setTheme("midnight", isSystemInDark)
+        setTheme("light", isSystemInDark)
     }
 
     fun applySystemTheme(isSystemInDark: Boolean) {
@@ -120,7 +120,7 @@ class ThemeManager private constructor(context: Context) {
         val baseTheme = when (activeThemeId) {
             "auto", "system" -> SystemTheme.resolve(isSystemInDark)
             "custom" -> buildCustomTheme(customPalette)
-            else -> presetRegistry[activeThemeId] ?: MidnightTheme.definition
+            else -> presetRegistry[activeThemeId] ?: LightTheme.definition
         }
 
         return if (isRegionalStyleEnabled) {

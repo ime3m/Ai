@@ -18,83 +18,83 @@ object LightTheme {
         ),
         colors = ColorTokens(
             background = BackgroundTokens(
-                primary = PrimitiveTokens.neutral50,
-                secondary = PrimitiveTokens.white100,
-                tertiary = PrimitiveTokens.neutral100,
+                primary = FuturisticTokens.LightColors.background,
+                secondary = FuturisticTokens.LightColors.surfaceElevated,
+                tertiary = FuturisticTokens.LightColors.surface,
                 overlay = PrimitiveTokens.blackAlpha30
             ),
             surface = SurfaceTokens(
-                primary = PrimitiveTokens.white100,
-                secondary = PrimitiveTokens.neutral100,
-                elevated = PrimitiveTokens.white100,
-                card = PrimitiveTokens.white100,
-                cardHover = PrimitiveTokens.neutral50,
-                input = PrimitiveTokens.neutral100
+                primary = FuturisticTokens.LightColors.surfaceElevated,
+                secondary = FuturisticTokens.LightColors.surface,
+                elevated = FuturisticTokens.LightColors.surfaceElevated,
+                card = FuturisticTokens.LightColors.surfaceElevated,
+                cardHover = FuturisticTokens.LightColors.surface,
+                input = FuturisticTokens.LightColors.surface
             ),
             text = TextTokens(
-                primary = PrimitiveTokens.neutral950,
-                secondary = PrimitiveTokens.neutral700,
-                tertiary = PrimitiveTokens.neutral600,
+                primary = FuturisticTokens.LightColors.primaryText,
+                secondary = FuturisticTokens.LightColors.secondaryText,
+                tertiary = FuturisticTokens.LightColors.tertiaryText,
                 muted = PrimitiveTokens.neutral500,
                 disabled = PrimitiveTokens.neutral400,
                 inverse = PrimitiveTokens.white100
             ),
             accent = AccentTokens(
-                primary = PrimitiveTokens.blue600,
+                primary = FuturisticTokens.LightColors.accent,
                 secondary = PrimitiveTokens.blue700,
                 tertiary = PrimitiveTokens.purple600
             ),
             border = BorderTokens(
-                default = PrimitiveTokens.neutral200,
-                subtle = PrimitiveTokens.neutral100,
+                default = FuturisticTokens.LightColors.border,
+                subtle = FuturisticTokens.LightColors.borderLight,
                 strong = PrimitiveTokens.neutral300,
-                focus = PrimitiveTokens.blue600
+                focus = FuturisticTokens.LightColors.accent
             ),
             status = StatusTokens(
                 success = PrimitiveTokens.green600,
                 warning = PrimitiveTokens.amber600,
                 error = PrimitiveTokens.red600,
-                info = PrimitiveTokens.blue600,
+                info = FuturisticTokens.LightColors.accent,
                 neutral = PrimitiveTokens.neutral600
             ),
             overlay = OverlayTokens(
                 scrim = PrimitiveTokens.blackAlpha50,
-                modal = PrimitiveTokens.white100,
+                modal = FuturisticTokens.LightColors.surfaceElevated,
                 pressed = PrimitiveTokens.blackAlpha10
             ),
             component = ComponentTokens(
                 voiceButton = VoiceButtonTokens(
-                    background = PrimitiveTokens.blue600,
-                    foreground = PrimitiveTokens.white100,
-                    glow = PrimitiveTokens.blue500.copy(alpha = 0.25f),
-                    activeRing = PrimitiveTokens.blue400
+                    background = FuturisticTokens.LightColors.primaryButton,
+                    foreground = FuturisticTokens.LightColors.primaryButtonText,
+                    glow = FuturisticTokens.LightColors.accent.copy(alpha = 0.25f),
+                    activeRing = FuturisticTokens.LightColors.accent
                 ),
                 chatBubble = ChatBubbleTokens(
                     user = BubbleTokens(
-                        background = PrimitiveTokens.blue600,
-                        text = PrimitiveTokens.white100,
+                        background = FuturisticTokens.LightColors.primaryButton,
+                        text = FuturisticTokens.LightColors.primaryButtonText,
                         border = Color.Transparent
                     ),
                     ai = BubbleTokens(
-                        background = PrimitiveTokens.neutral100,
-                        text = PrimitiveTokens.neutral950,
-                        border = PrimitiveTokens.neutral200
+                        background = FuturisticTokens.LightColors.surface,
+                        text = FuturisticTokens.LightColors.primaryText,
+                        border = FuturisticTokens.LightColors.border
                     )
                 ),
                 waveform = WaveformComponentTokens(
-                    active = PrimitiveTokens.blue600,
+                    active = FuturisticTokens.LightColors.accent,
                     idle = PrimitiveTokens.neutral400,
                     processing = PrimitiveTokens.purple600,
-                    speaking = PrimitiveTokens.teal600
+                    speaking = FuturisticTokens.LightColors.accent
                 ),
                 button = ButtonTokens(
                     primary = ButtonTokenPair(
-                        background = PrimitiveTokens.blue600,
-                        text = PrimitiveTokens.white100
+                        background = FuturisticTokens.LightColors.primaryButton,
+                        text = FuturisticTokens.LightColors.primaryButtonText
                     ),
                     secondary = ButtonTokenPair(
-                        background = PrimitiveTokens.neutral100,
-                        text = PrimitiveTokens.neutral900
+                        background = FuturisticTokens.LightColors.surface,
+                        text = FuturisticTokens.LightColors.primaryText
                     )
                 )
             )

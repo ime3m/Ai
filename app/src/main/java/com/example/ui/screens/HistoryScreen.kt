@@ -99,7 +99,8 @@ enum class RoleFilter(val label: String) {
 @Composable
 fun HistoryScreen(
     viewModel: VoiceViewModel,
-    onNavigateToChat: () -> Unit
+    onNavigateToChat: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current

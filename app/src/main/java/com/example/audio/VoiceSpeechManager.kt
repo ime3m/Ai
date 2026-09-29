@@ -105,6 +105,9 @@ class VoiceSpeechManager(private val context: Context) : TextToSpeech.OnInitList
     private val _soundLevel = MutableStateFlow(0f)
     val soundLevel: StateFlow<Float> = _soundLevel.asStateFlow()
 
+    private val _rmsDb = MutableStateFlow(-2f)
+    val rmsDb: StateFlow<Float> = _rmsDb.asStateFlow()
+
     private val _voiceError = MutableStateFlow<VoiceInputError?>(null)
     val voiceError: StateFlow<VoiceInputError?> = _voiceError.asStateFlow()
 
@@ -185,6 +188,7 @@ class VoiceSpeechManager(private val context: Context) : TextToSpeech.OnInitList
             }
 
             override fun onRmsChanged(rmsdB: Float) {
+                _rmsDb.value = rmsdB
                 val normalized = ((rmsdB + 2f) / 12f).coerceIn(0.0f, 1.0f)
                 _soundLevel.value = normalized
 
@@ -221,6 +225,7 @@ class VoiceSpeechManager(private val context: Context) : TextToSpeech.OnInitList
                     "Recognizer onEndOfSpeech",
                     currentSessionId
                 )
+                _rmsDb.value = -2f
                 _soundLevel.value = 0f
                 _voiceState.value = VoiceState.END_OF_SPEECH
                 finalizeTurn(reason = "RECOGNIZER_END_OF_SPEECH")
@@ -232,6 +237,7 @@ class VoiceSpeechManager(private val context: Context) : TextToSpeech.OnInitList
                     "SpeechRecognizer error code: $error",
                     currentSessionId
                 )
+                _rmsDb.value = -2f
                 _soundLevel.value = 0f
 
                 // If error is client or busy, re-create recognizer
@@ -823,8 +829,7 @@ class VoiceSpeechManager(private val context: Context) : TextToSpeech.OnInitList
 
     private fun parseLocale(localeCode: String): Locale {
         return try {
-            val parts = localeCode.split("-", "_")
-            if (parts.size >= 2) Locale(parts[0], parts[1]) else Locale(parts[0])
+            Locale.forLanguageTag(localeCode.replace('_', '-'))
         } catch (_: Exception) {
             Locale.US
         }

@@ -254,9 +254,19 @@ class VoiceRepository(
     fun checkRealTimeKnowledge(
         query: String,
         dialect: RegionalDialect,
-        forceWeb: Boolean = false
+        forceWeb: Boolean = false,
+        resolvedLocation: String? = null,
+        userLocation: com.example.data.location.UserLocation = com.example.data.location.UserLocation(),
+        history: List<Pair<String, String>> = emptyList()
     ): com.example.data.knowledge.RealTimeKnowledgeResponse? {
-        return geminiService.getRealTimeKnowledge(query, dialect, forceWeb)
+        return geminiService.getRealTimeKnowledge(
+            query = query,
+            dialect = dialect,
+            forceWeb = forceWeb,
+            resolvedLocation = resolvedLocation,
+            userLocation = userLocation,
+            history = history
+        )
     }
 
     suspend fun clearMessagesForDialect(dialectId: String) {
@@ -329,6 +339,32 @@ class VoiceRepository(
 
     // Gemini Voice Actions
     suspend fun getAiVoiceResponse(
+        request: com.example.data.model.AIRequest,
+        strength: Float = 0.75f,
+        personality: VoicePersonality = VoicePersonality.FRIENDLY,
+        slangEnabled: Boolean = true,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "default"
+    ): String {
+        val currentStyle = voiceDao.getSpeakingStyleSync()
+        return geminiService.generateVoiceResponse(
+            request = request,
+            regionalStrength = strength,
+            personality = personality,
+            speakingStyle = currentStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes,
+            inputSource = inputSource,
+            conversationId = conversationId
+        )
+    }
+
+    suspend fun getAiVoiceResponse(
         userMessage: String,
         history: List<Pair<String, String>>,
         dialect: RegionalDialect,
@@ -337,7 +373,12 @@ class VoiceRepository(
         slangEnabled: Boolean,
         responseLength: String = "Balanced",
         naturalMixingEnabled: Boolean = true,
-        customPromptNotes: String = ""
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "default",
+        queryLocation: String? = null,
+        userLocation: com.example.data.location.UserLocation = com.example.data.location.UserLocation(),
+        queryContext: com.example.data.location.QueryContext? = null
     ): String {
         val currentStyle = voiceDao.getSpeakingStyleSync()
         return geminiService.generateVoiceResponse(
@@ -350,9 +391,16 @@ class VoiceRepository(
             slangEnabled = slangEnabled,
             responseLength = responseLength,
             naturalMixingEnabled = naturalMixingEnabled,
-            customPromptNotes = customPromptNotes
+            customPromptNotes = customPromptNotes,
+            inputSource = inputSource,
+            conversationId = conversationId,
+            queryLocation = queryLocation,
+            userLocation = userLocation,
+            queryContext = queryContext
         )
     }
+
+    val latestTrace = geminiService.latestTrace
 
     suspend fun previewPromptContext(
         dialect: RegionalDialect,

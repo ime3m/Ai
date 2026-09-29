@@ -103,7 +103,14 @@ fun ThemeDefinition.toMaterialColorScheme(): ColorScheme {
         onErrorContainer = colors.status.error,
         outline = colors.border.default,
         outlineVariant = colors.border.subtle,
-        scrim = colors.overlay.scrim
+        scrim = colors.overlay.scrim,
+        surfaceBright = colors.surface.elevated,
+        surfaceDim = colors.surface.card,
+        surfaceContainer = colors.surface.secondary,
+        surfaceContainerHigh = colors.surface.elevated,
+        surfaceContainerHighest = colors.surface.elevated,
+        surfaceContainerLow = colors.surface.card,
+        surfaceContainerLowest = colors.background.primary
     )
 }
 

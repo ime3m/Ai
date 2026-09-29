@@ -89,12 +89,12 @@ object MidnightTheme {
                 ),
                 button = ButtonTokens(
                     primary = ButtonTokenPair(
-                        background = PrimitiveTokens.blue600,
-                        text = PrimitiveTokens.white100
+                        background = FuturisticTokens.DarkColors.primaryButton,
+                        text = FuturisticTokens.DarkColors.primaryButtonText
                     ),
                     secondary = ButtonTokenPair(
-                        background = PrimitiveTokens.neutral800,
-                        text = PrimitiveTokens.white90
+                        background = FuturisticTokens.DarkColors.surface,
+                        text = FuturisticTokens.DarkColors.primaryText
                     )
                 )
             )

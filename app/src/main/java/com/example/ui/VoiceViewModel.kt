@@ -15,6 +15,10 @@ import com.example.data.knowledge.RealTimeKnowledgeEngine
 import com.example.data.knowledge.RealTimeKnowledgeResponse
 import com.example.data.knowledge.VerificationLevel
 import com.example.data.local.AppDatabase
+import com.example.data.location.LocationExtractor
+import com.example.data.location.QueryContext
+import com.example.data.location.UserLocation
+import com.example.data.model.AIRequest
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.ConversationMode
 import com.example.data.model.ConversationSessionEntity
@@ -76,9 +80,32 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val geminiService = GeminiVoiceService()
     val repository = VoiceRepository(database.voiceDao(), geminiService)
     val speechManager = VoiceSpeechManager(application)
+    val preferencesRepository = com.example.data.preferences.PreferencesRepository(application)
+
+    private val _selectedRegionProfile = MutableStateFlow(
+        com.example.data.regional.RegionalProfileRegistry.getProfileById(preferencesRepository.selectedRegionId)
+    )
+    val selectedRegionProfile: StateFlow<com.example.data.regional.RegionalProfile> = _selectedRegionProfile.asStateFlow()
+
+    private val _userLocation = MutableStateFlow(preferencesRepository.getUserLocation())
+    val userLocation: StateFlow<UserLocation> = _userLocation.asStateFlow()
+
+    fun setUserLocation(city: String?, country: String?) {
+        val updated = UserLocation(
+            city = city,
+            country = country,
+            source = UserLocation.SOURCE_USER_CONFIGURED
+        )
+        preferencesRepository.saveUserLocation(updated)
+        _userLocation.value = updated
+    }
+
+    private val _showFirstLaunchWelcome = MutableStateFlow(!preferencesRepository.hasCompletedFirstLaunch)
+    val showFirstLaunchWelcome: StateFlow<Boolean> = _showFirstLaunchWelcome.asStateFlow()
 
     val voiceState: StateFlow<VoiceState> = speechManager.voiceState
     val soundLevel: StateFlow<Float> = speechManager.soundLevel
+    val rmsDb: StateFlow<Float> = speechManager.rmsDb
     val partialTranscript: StateFlow<String> = speechManager.partialTranscript
     val lastFinalTranscript: StateFlow<String> = speechManager.lastFinalTranscript
     val voiceError: StateFlow<VoiceInputError?> = speechManager.voiceError
@@ -175,12 +202,18 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             repository.initializeDefaultsIfNeeded()
-            // Observe profiles and choose active
+            // Observe profiles and choose active based on persisted region preference
             repository.allProfiles.collect { profiles ->
                 if (profiles.isNotEmpty()) {
-                    val defaultOne = profiles.find { it.isDefault } ?: profiles.first()
-                    _currentProfile.value = defaultOne
-                    val dialect = DialectCatalog.getDialectById(defaultOne.dialectId)
+                    val savedRegion = com.example.data.regional.RegionalProfileRegistry.getProfileById(preferencesRepository.selectedRegionId)
+                    _selectedRegionProfile.value = savedRegion
+
+                    val matchedProfile = profiles.find { it.dialectId == savedRegion.defaultDialectId }
+                        ?: profiles.find { it.isDefault }
+                        ?: profiles.first()
+
+                    _currentProfile.value = matchedProfile
+                    val dialect = DialectCatalog.getDialectById(matchedProfile.dialectId)
                     _currentDialect.value = dialect
                     updatePracticePhrase(dialect)
                 }
@@ -223,6 +256,22 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             val d = _currentDialect.value
             d.samplePhrases.firstOrNull() ?: d.greeting.ifBlank { "ഹലോ, സുഖമാണോ?" }
         }
+    }
+
+    fun completeFirstLaunch() {
+        preferencesRepository.hasCompletedFirstLaunch = true
+        _showFirstLaunchWelcome.value = false
+    }
+
+    fun selectRegionProfile(profile: com.example.data.regional.RegionalProfile) {
+        _selectedRegionProfile.value = profile
+        preferencesRepository.selectedRegionId = profile.id
+        preferencesRepository.selectedLanguage = profile.defaultLanguage
+        preferencesRepository.selectedVoiceId = profile.defaultDialectId
+
+        val targetDialect = profile.toRegionalDialect()
+        selectDialect(targetDialect)
+        _userFeedbackNotice.value = "Region & Voice set to ${profile.flagEmoji} ${profile.name}"
     }
 
     fun showNotice(message: String) {
@@ -511,11 +560,24 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     loadMessagesForSession(currentSession.id)
                 }
 
-                // Check real-time knowledge
+                // Analyze location and query context (Strict separation of Regional Style vs Geographic Location)
+                val userLoc = _userLocation.value
+                val history = _messages.value.takeLast(6).map { it.role to it.text }
+                val queryContext = LocationExtractor.analyzeQuery(
+                    query = userText,
+                    conversationHistory = history,
+                    userLocation = userLoc
+                )
+                val targetLocation = queryContext.requestedLocation
+
+                // Check real-time knowledge specifically for targetLocation (NOT Kerala by default!)
                 val verifiedKnowledge = repository.checkRealTimeKnowledge(
                     query = userText,
                     dialect = dialect,
-                    forceWeb = _isWebSearchEnabled.value
+                    forceWeb = _isWebSearchEnabled.value,
+                    resolvedLocation = targetLocation,
+                    userLocation = userLoc,
+                    history = history
                 )
 
                 // Save user message to DB
@@ -526,11 +588,17 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     text = userText
                 )
 
-                val history = _messages.value.takeLast(6).map { it.role to it.text }
+                val aiRequest = AIRequest(
+                    message = userText,
+                    regionalProfile = _selectedRegionProfile.value,
+                    queryLocation = targetLocation,
+                    userLocation = userLoc,
+                    queryContext = queryContext,
+                    conversationHistory = history
+                )
+
                 val aiResponse = repository.getAiVoiceResponse(
-                    userMessage = userText,
-                    history = history,
-                    dialect = dialect,
+                    request = aiRequest,
                     strength = strength,
                     personality = personality,
                     slangEnabled = slangEnabled,

@@ -12,10 +12,24 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line numbers for crash reports in production
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Data models and Room database entities
+-keep class com.example.data.model.** { *; }
+-keep class com.example.data.local.** { *; }
+-keep class com.example.data.regional.** { *; }
+-keep class com.example.data.location.** { *; }
+-keep class com.example.data.reasoning.** { *; }
+
+# Moshi and Retrofit serialization
+-keepclassmembers class * {
+    @com.squareup.moshi.Json *;
+}
+-keep class com.squareup.moshi.** { *; }
+
+# OkHttp
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
+

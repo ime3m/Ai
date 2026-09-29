@@ -519,6 +519,63 @@ object InternationalDialects {
                     verificationStatus = "Verified"
                 )
             )
+        ),
+
+        // 12. Tokyo Japanese
+        RegionalDialect(
+            id = "ja_jp_tokyo",
+            language = "Japanese",
+            country = "Japan",
+            stateOrProvince = "Kanto",
+            region = "Tokyo",
+            cityOrArea = "Tokyo",
+            dialectName = "Japanese (Tokyo Standard)",
+            flagEmoji = "🇯🇵",
+            samplePhrases = listOf(
+                "こんにちは！今日はどのようなご用件でしょうか？",
+                "今日の天気や最新の情報をお知らせしますね。",
+                "いつでもお気軽にお話しください。",
+                "美味しい日本料理や名所についてもご案内できます。"
+            ),
+            greeting = "こんにちは！お元気ですか？今日はどのようなお手伝いをしましょうか？",
+            localeCode = "ja-JP",
+            description = "Natural polite Standard Japanese (Hyojungo/Tokyo dialect) with considerate, warm conversational cadence.",
+            codeSwitchingDescription = "Polite and conversational Standard Japanese with natural aizuchi and respectful expressions.",
+            tendenciesNotes = "Reflects attentive hospitality, respectful tone (Keigo/Teineigo), and natural conversational flow.",
+            typicalExpressions = listOf(
+                RegionalExpression(
+                    expression = "よろしくお願いします (Yoroshiku onegaishimasu)",
+                    meaning = "Pleased to work with you / Treat me well",
+                    englishMeaning = "Pleased to work with you / In your care",
+                    region = "Kanto",
+                    district = "Tokyo",
+                    dialect = "Japanese (Tokyo Standard)",
+                    context = "Universal polite greeting establishing mutual respect and goodwill",
+                    formalEquivalent = "よろしくお願いいたします",
+                    casualEquivalent = "よろしく",
+                    exampleSentence = "今日からどうぞよろしくお願いします。",
+                    category = "Everyday conversation",
+                    toneCategory = "Polite",
+                    culturalNotes = "Fundamental cornerstone of Japanese social interaction.",
+                    verificationStatus = "Verified"
+                ),
+                RegionalExpression(
+                    expression = "お疲れ様です (Otsukaresama desu)",
+                    meaning = "Thank you for your hard work / Greeting to colleagues and friends",
+                    englishMeaning = "Good work / Great job today",
+                    region = "Kanto",
+                    district = "Tokyo",
+                    dialect = "Japanese (Tokyo Standard)",
+                    context = "Daily greeting acknowledging effort and connection",
+                    formalEquivalent = "お疲れ様でございます",
+                    casualEquivalent = "お疲れ",
+                    exampleSentence = "今日もお疲れ様でした！",
+                    category = "Everyday conversation",
+                    toneCategory = "Warm",
+                    culturalNotes = "Ubiquitous empathetic greeting in daily Japanese life.",
+                    verificationStatus = "Verified"
+                )
+            )
         )
     )
 }
