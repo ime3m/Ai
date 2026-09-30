@@ -8,6 +8,8 @@ import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.DictionaryEntryEntity
+import com.example.data.model.MemoryItemEntity
+import com.example.data.model.SavedItemEntity
 import com.example.data.model.SpeakingStylePreferenceEntity
 import com.example.data.model.VoiceProfileEntity
 import kotlinx.coroutines.flow.Flow
@@ -145,4 +147,48 @@ interface VoiceDao {
 
     @Query("DELETE FROM speaking_style_preference")
     suspend fun clearSpeakingStyle()
+
+    // --- Saved Items (Section 11) ---
+    @Query("SELECT * FROM saved_items ORDER BY timestamp DESC")
+    fun getAllSavedItems(): Flow<List<SavedItemEntity>>
+
+    @Query("SELECT * FROM saved_items WHERE itemType = :type ORDER BY timestamp DESC")
+    fun getSavedItemsByType(type: String): Flow<List<SavedItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSavedItem(item: SavedItemEntity): Long
+
+    @Query("DELETE FROM saved_items WHERE id = :id")
+    suspend fun deleteSavedItemById(id: Long)
+
+    @Delete
+    suspend fun deleteSavedItem(item: SavedItemEntity)
+
+    @Query("DELETE FROM saved_items")
+    suspend fun clearAllSavedItems()
+
+    // --- AI Memory Items (Section 22) ---
+    @Query("SELECT * FROM ai_memories ORDER BY updatedAt DESC")
+    fun getAllMemoryItems(): Flow<List<MemoryItemEntity>>
+
+    @Query("SELECT * FROM ai_memories WHERE isEnabled = 1 ORDER BY updatedAt DESC")
+    fun getActiveMemoryItems(): Flow<List<MemoryItemEntity>>
+
+    @Query("SELECT * FROM ai_memories WHERE isEnabled = 1 ORDER BY updatedAt DESC")
+    suspend fun getActiveMemoryItemsSync(): List<MemoryItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMemoryItem(item: MemoryItemEntity): Long
+
+    @Update
+    suspend fun updateMemoryItem(item: MemoryItemEntity)
+
+    @Query("UPDATE ai_memories SET isEnabled = :isEnabled WHERE id = :id")
+    suspend fun setMemoryEnabled(id: Long, isEnabled: Boolean)
+
+    @Query("DELETE FROM ai_memories WHERE id = :id")
+    suspend fun deleteMemoryItemById(id: Long)
+
+    @Query("DELETE FROM ai_memories")
+    suspend fun clearAllMemories()
 }

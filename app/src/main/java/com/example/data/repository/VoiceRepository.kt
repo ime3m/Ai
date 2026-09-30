@@ -4,9 +4,11 @@ import com.example.data.local.VoiceDao
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.DictionaryEntryEntity
 import com.example.data.model.LocalSayingResult
+import com.example.data.model.MemoryItemEntity
 import com.example.data.model.PronunciationFeedback
 import com.example.data.model.RegionalDialect
 import com.example.data.model.RegionalExpression
+import com.example.data.model.SavedItemEntity
 import com.example.data.model.SlangTranslationResult
 import com.example.data.model.SpeakingStylePreferenceEntity
 import com.example.data.model.StyleRewriteResult
@@ -24,6 +26,9 @@ class VoiceRepository(
     val allProfiles: Flow<List<VoiceProfileEntity>> = voiceDao.getAllProfiles()
     val allDictionaryEntries: Flow<List<DictionaryEntryEntity>> = voiceDao.getAllDictionaryEntries()
     val speakingStyle: Flow<SpeakingStylePreferenceEntity?> = voiceDao.getSpeakingStyle()
+    val allSavedItems: Flow<List<SavedItemEntity>> = voiceDao.getAllSavedItems()
+    val allMemoryItems: Flow<List<MemoryItemEntity>> = voiceDao.getAllMemoryItems()
+    val activeMemoryItems: Flow<List<MemoryItemEntity>> = voiceDao.getActiveMemoryItems()
 
     suspend fun initializeDefaultsIfNeeded() {
         val existingProfiles = voiceDao.getAllProfiles().firstOrNull()
@@ -209,7 +214,13 @@ class VoiceRepository(
         role: String,
         text: String,
         highlightedSlang: List<String> = emptyList(),
-        knowledge: com.example.data.knowledge.RealTimeKnowledgeResponse? = null
+        knowledge: com.example.data.knowledge.RealTimeKnowledgeResponse? = null,
+        imageUri: String? = null,
+        isImageGeneration: Boolean = false,
+        imagePrompt: String = "",
+        attachedImageUri: String? = null,
+        documentUri: String? = null,
+        documentName: String? = null
     ) {
         val sourcesStr = knowledge?.sources?.joinToString("|") { "${it.name} (${it.url})" } ?: ""
         voiceDao.insertMessage(
@@ -217,19 +228,32 @@ class VoiceRepository(
                 conversationId = conversationId,
                 role = role,
                 text = text,
+                timestamp = System.currentTimeMillis(),
                 dialectId = dialectId,
                 highlightedSlangCsv = highlightedSlang.joinToString(","),
                 isRealTimeKnowledge = knowledge != null,
                 sourcesCsv = sourcesStr,
                 knowledgeFreshness = knowledge?.freshnessCategory?.name ?: "",
-                knowledgeTimestamp = knowledge?.timestamp ?: ""
+                knowledgeTimestamp = knowledge?.timestamp ?: "",
+                imageUri = imageUri,
+                isImageGeneration = isImageGeneration,
+                imagePrompt = imagePrompt,
+                attachedImageUri = attachedImageUri,
+                documentUri = documentUri,
+                documentName = documentName
             )
         )
 
         // Update session preview & timestamp
         val session = voiceDao.getSessionById(conversationId)
         if (session != null) {
-            val preview = if (text.length > 60) text.take(60) + "..." else text
+            val preview = when {
+                isImageGeneration -> "🖼 Image generated"
+                attachedImageUri != null -> "📷 Image attached"
+                text.length > 60 -> text.take(60) + "..."
+                text.isNotBlank() -> text
+                else -> "Message"
+            }
             voiceDao.updateSession(
                 session.copy(
                     updatedAt = System.currentTimeMillis(),
@@ -245,6 +269,7 @@ class VoiceRepository(
             ConversationMessageEntity(
                 role = role,
                 text = text,
+                timestamp = System.currentTimeMillis(),
                 dialectId = dialectId,
                 highlightedSlangCsv = highlightedSlang.joinToString(",")
             )
@@ -338,6 +363,36 @@ class VoiceRepository(
     }
 
     // Gemini Voice Actions
+    suspend fun streamAiVoiceResponse(
+        request: com.example.data.model.AIRequest,
+        strength: Float = 0.75f,
+        personality: VoicePersonality = VoicePersonality.FRIENDLY,
+        slangEnabled: Boolean = true,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "default",
+        onFirstToken: () -> Unit = {},
+        onToken: (String) -> Unit
+    ): String {
+        val currentStyle = voiceDao.getSpeakingStyleSync()
+        return geminiService.streamVoiceResponse(
+            request = request,
+            regionalStrength = strength,
+            personality = personality,
+            speakingStyle = currentStyle,
+            slangEnabled = slangEnabled,
+            responseLength = responseLength,
+            naturalMixingEnabled = naturalMixingEnabled,
+            customPromptNotes = customPromptNotes,
+            inputSource = inputSource,
+            conversationId = conversationId,
+            onFirstToken = onFirstToken,
+            onToken = onToken
+        )
+    }
+
     suspend fun getAiVoiceResponse(
         request: com.example.data.model.AIRequest,
         strength: Float = 0.75f,
@@ -460,5 +515,50 @@ class VoiceRepository(
     ): List<StyleRewriteResult> {
         val currentStyle = voiceDao.getSpeakingStyleSync()
         return geminiService.rewriteInStyles(text, dialect, currentStyle)
+    }
+
+    // --- Saved Items Operations ---
+    suspend fun saveItem(item: SavedItemEntity): Long {
+        return voiceDao.insertSavedItem(item)
+    }
+
+    suspend fun deleteSavedItem(id: Long) {
+        voiceDao.deleteSavedItemById(id)
+    }
+
+    suspend fun clearAllSavedItems() {
+        voiceDao.clearAllSavedItems()
+    }
+
+    // --- AI Memory Operations ---
+    suspend fun saveMemory(key: String, value: String, category: String = "General"): Long {
+        return voiceDao.insertMemoryItem(
+            MemoryItemEntity(
+                key = key,
+                value = value,
+                category = category,
+                isEnabled = true
+            )
+        )
+    }
+
+    suspend fun updateMemory(item: MemoryItemEntity) {
+        voiceDao.updateMemoryItem(item)
+    }
+
+    suspend fun toggleMemoryEnabled(id: Long, enabled: Boolean) {
+        voiceDao.setMemoryEnabled(id, enabled)
+    }
+
+    suspend fun deleteMemory(id: Long) {
+        voiceDao.deleteMemoryItemById(id)
+    }
+
+    suspend fun clearAllMemories() {
+        voiceDao.clearAllMemories()
+    }
+
+    suspend fun getActiveMemoriesList(): List<MemoryItemEntity> {
+        return voiceDao.getActiveMemoryItemsSync()
     }
 }

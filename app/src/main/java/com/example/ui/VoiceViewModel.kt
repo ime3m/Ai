@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.TranscriptConfirmationMode
@@ -35,12 +36,14 @@ import com.example.data.model.VoiceProfileEntity
 import com.example.data.remote.GeminiVoiceService
 import com.example.data.repository.DialectCatalog
 import com.example.data.repository.VoiceRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 enum class InputMode {
     VOICE, WRITE
@@ -100,7 +103,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         _userLocation.value = updated
     }
 
-    private val _showFirstLaunchWelcome = MutableStateFlow(!preferencesRepository.hasCompletedFirstLaunch)
+    private val _showFirstLaunchWelcome = MutableStateFlow(false)
     val showFirstLaunchWelcome: StateFlow<Boolean> = _showFirstLaunchWelcome.asStateFlow()
 
     val voiceState: StateFlow<VoiceState> = speechManager.voiceState
@@ -189,6 +192,15 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
 
+    private val _streamingAiText = MutableStateFlow<String?>(null)
+    val streamingAiText: StateFlow<String?> = _streamingAiText.asStateFlow()
+
+    private val _lastFailedMessage = MutableStateFlow<String?>(null)
+    val lastFailedMessage: StateFlow<String?> = _lastFailedMessage.asStateFlow()
+
+    private val _requestError = MutableStateFlow<String?>(null)
+    val requestError: StateFlow<String?> = _requestError.asStateFlow()
+
     private val _localSayingsState = MutableStateFlow(
         LocalSayingsUiState(inputText = "നമുക്ക് ചായ കുടിക്കാൻ പോകാം")
     )
@@ -198,6 +210,151 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         StyleRewriteUiState(inputText = "നാളെ കാണാം")
     )
     val styleRewriteState: StateFlow<StyleRewriteUiState> = _styleRewriteState.asStateFlow()
+
+    private val _isChatWindowOpen = MutableStateFlow(false)
+    val isChatWindowOpen: StateFlow<Boolean> = _isChatWindowOpen.asStateFlow()
+
+    private val _chatSuggestions = MutableStateFlow<List<String>>(
+        com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(_currentDialect.value)
+    )
+    val chatSuggestions: StateFlow<List<String>> = _chatSuggestions.asStateFlow()
+
+    val imageService = com.example.data.image.ImageGenerationService(application)
+    val documentService = com.example.data.document.DocumentService(application)
+    val writingService = com.example.data.writing.WritingService(application)
+
+    private val _attachedImageUri = MutableStateFlow<String?>(null)
+    val attachedImageUri: StateFlow<String?> = _attachedImageUri.asStateFlow()
+
+    private val _attachedDocument = MutableStateFlow<com.example.data.document.DocumentAttachment?>(null)
+    val attachedDocument: StateFlow<com.example.data.document.DocumentAttachment?> = _attachedDocument.asStateFlow()
+
+    private val _isImageGenerating = MutableStateFlow(false)
+    val isImageGenerating: StateFlow<Boolean> = _isImageGenerating.asStateFlow()
+
+    private val _imageLoadingMessage = MutableStateFlow("Creating your image...")
+    val imageLoadingMessage: StateFlow<String> = _imageLoadingMessage.asStateFlow()
+
+    // --- Saved Items (Section 11) ---
+    val allSavedItems: StateFlow<List<com.example.data.model.SavedItemEntity>> = repository.allSavedItems
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveItem(
+        title: String,
+        content: String,
+        itemType: String = "ANSWER",
+        mediaUri: String? = null,
+        prompt: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.saveItem(
+                com.example.data.model.SavedItemEntity(
+                    title = title.ifBlank { "Saved Item" },
+                    content = content,
+                    itemType = itemType,
+                    mediaUri = mediaUri,
+                    prompt = prompt,
+                    dialectId = _currentDialect.value.id
+                )
+            )
+        }
+    }
+
+    fun deleteSavedItem(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteSavedItem(id)
+        }
+    }
+
+    // --- AI Memory (Section 22) ---
+    private val _isMemoryEnabled = MutableStateFlow(true)
+    val isMemoryEnabled: StateFlow<Boolean> = _isMemoryEnabled.asStateFlow()
+
+    val allMemories: StateFlow<List<com.example.data.model.MemoryItemEntity>> = repository.allMemoryItems
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addMemory(key: String, value: String, category: String = "General") {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.saveMemory(key = key, value = value, category = category)
+        }
+    }
+
+    fun toggleMemory(id: Long, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.toggleMemoryEnabled(id, enabled)
+        }
+    }
+
+    fun deleteMemory(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteMemory(id)
+        }
+    }
+
+    fun clearAllMemories() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.clearAllMemories()
+        }
+    }
+
+    fun toggleMasterMemory(enabled: Boolean) {
+        _isMemoryEnabled.value = enabled
+    }
+
+    // --- Image & Document Attachment Actions ---
+    fun attachImage(pathOrUri: String) {
+        _attachedImageUri.value = pathOrUri
+        _attachedDocument.value = null // clear document if image attached
+        _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getUploadedImageSuggestions(_currentDialect.value)
+    }
+
+    fun clearAttachedImage() {
+        _attachedImageUri.value = null
+        _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(_currentDialect.value)
+    }
+
+    fun attachDocument(doc: com.example.data.document.DocumentAttachment) {
+        _attachedDocument.value = doc
+        _attachedImageUri.value = null // clear image if doc attached
+        _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getDocumentSuggestions(_currentDialect.value)
+    }
+
+    fun clearAttachedDocument() {
+        _attachedDocument.value = null
+        _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(_currentDialect.value)
+    }
+
+    fun saveImageToGallery(imagePath: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val success = com.example.data.image.ImageStorageManager.saveImageToPublicGallery(getApplication(), imagePath)
+            onResult(success)
+        }
+    }
+
+    fun shareImage(context: android.content.Context, imagePath: String) {
+        val shareIntent = com.example.data.image.ImageStorageManager.createShareImageIntent(context, imagePath)
+        if (shareIntent != null) {
+            val chooser = android.content.Intent.createChooser(shareIntent, "Share Image")
+            chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+        }
+    }
+
+    fun regenerateImage(prompt: String) {
+        sendChatMessage(prompt, speakResponse = !isMuted.value)
+    }
+
+    fun openChatWindow() {
+        _isChatWindowOpen.value = true
+    }
+
+    fun closeChatWindow() {
+        _isChatWindowOpen.value = false
+    }
+
+    fun onSuggestionClicked(suggestion: String) {
+        sendChatMessage(suggestion, speakResponse = !isMuted.value)
+    }
 
     init {
         viewModelScope.launch {
@@ -216,21 +373,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     val dialect = DialectCatalog.getDialectById(matchedProfile.dialectId)
                     _currentDialect.value = dialect
                     updatePracticePhrase(dialect)
-                }
-            }
-        }
-
-        // Initialize active conversation session
-        viewModelScope.launch {
-            repository.allActiveSessions.collect { sessions ->
-                if (_activeSession.value == null && sessions.isNotEmpty()) {
-                    val first = sessions.first()
-                    _activeSession.value = first
-                    loadMessagesForSession(first.id)
-                } else if (_activeSession.value == null && sessions.isEmpty()) {
-                    val defaultSession = repository.createNewSession("Chat with ${_currentDialect.value.dialectName}", _currentDialect.value.id)
-                    _activeSession.value = defaultSession
-                    loadMessagesForSession(defaultSession.id)
+                    _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(dialect)
                 }
             }
         }
@@ -282,7 +425,9 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         messageJob?.cancel()
         messageJob = viewModelScope.launch {
             repository.getMessagesForConversation(sessionId).collect { msgList ->
-                _messages.value = msgList
+                if (msgList.isNotEmpty() || (!_isAiThinking.value && _streamingAiText.value == null)) {
+                    _messages.value = msgList
+                }
             }
         }
     }
@@ -440,6 +585,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         if (speechManager.voiceState.value.isRecording) {
             speechManager.stopListening()
         } else {
+            _isChatWindowOpen.value = true
             _pendingReviewTranscript.value = null
             speechManager.startListening(_currentDialect.value.localeCode)
         }
@@ -537,7 +683,25 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun retryLastFailedMessage() {
+        val failed = _lastFailedMessage.value ?: return
+        if (_isAiThinking.value) return
+        _requestError.value = null
+        _lastFailedMessage.value = null
+        sendChatMessage(failed)
+    }
+
+    fun dismissRequestError() {
+        _requestError.value = null
+    }
+
     fun sendChatMessage(userText: String, speakResponse: Boolean = (_inputMode.value == InputMode.VOICE)) {
+        val trimmed = userText.trim()
+        if (trimmed.isEmpty() || _isAiThinking.value) return
+
+        val startTime = System.currentTimeMillis()
+        Log.d("VoiceAiPerf", "REQUEST_STARTED [t=0ms]")
+
         val dialect = _currentDialect.value
         val profile = _currentProfile.value
         val strength = profile?.regionalStrength ?: 0.75f
@@ -547,49 +711,251 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val responseLength = profile?.responseLength ?: "Balanced"
         val naturalMixing = profile?.naturalMixingEnabled ?: true
         val customPromptNotes = profile?.customPromptNotes ?: ""
+        val userLoc = _userLocation.value
 
-        viewModelScope.launch {
-            _isAiThinking.value = true
+        _isAiThinking.value = true
+        _streamingAiText.value = null
+        _requestError.value = null
+        _isChatWindowOpen.value = true
+
+        // 1. Instant session resolution with meaningful title generation
+        var currentSession = _activeSession.value
+        val sessionId = currentSession?.id ?: "conv_${System.currentTimeMillis()}"
+        val meaningfulTitle = com.example.data.suggestions.ConversationTitleGenerator.generateTitle(trimmed, dialect.dialectName)
+        if (currentSession == null) {
+            val newSession = ConversationSessionEntity(
+                id = sessionId,
+                title = meaningfulTitle,
+                dialectId = dialect.id,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+            _activeSession.value = newSession
+            currentSession = newSession
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.createNewSession(meaningfulTitle, dialect.id)
+                loadMessagesForSession(sessionId)
+            }
+        } else if (currentSession.title.startsWith("New Chat") || currentSession.title.startsWith("Chat with")) {
+            val updatedSession = currentSession.copy(title = meaningfulTitle, updatedAt = System.currentTimeMillis())
+            _activeSession.value = updatedSession
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.renameSession(sessionId, meaningfulTitle)
+            }
+        }
+
+        // 2. Instant user message rendering (zero UI delay)
+        val userTimestamp = System.currentTimeMillis()
+        val attachedImage = _attachedImageUri.value
+        _attachedImageUri.value = null // consume attachment
+        val attachedDoc = _attachedDocument.value
+        _attachedDocument.value = null // consume attachment
+
+        val tempUserMsg = ConversationMessageEntity(
+            id = userTimestamp,
+            conversationId = sessionId,
+            role = "user",
+            text = trimmed,
+            timestamp = userTimestamp,
+            dialectId = dialect.id,
+            attachedImageUri = attachedImage,
+            documentUri = attachedDoc?.localPath,
+            documentName = attachedDoc?.fileName
+        )
+        _messages.value = _messages.value + tempUserMsg
+        Log.d("VoiceAiPerf", "UI_UPDATED [t=${System.currentTimeMillis() - startTime}ms] user message rendered")
+
+        // 3. Asynchronously persist user message in background
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Ensure active session exists
-                var currentSession = _activeSession.value
-                if (currentSession == null) {
-                    val title = if (userText.length > 25) userText.take(25) + "..." else userText
-                    currentSession = repository.createNewSession(title, dialect.id)
-                    _activeSession.value = currentSession
-                    loadMessagesForSession(currentSession.id)
+                repository.saveConversationMessage(
+                    conversationId = sessionId,
+                    dialectId = dialect.id,
+                    role = "user",
+                    text = trimmed,
+                    attachedImageUri = attachedImage,
+                    documentUri = attachedDoc?.localPath,
+                    documentName = attachedDoc?.fileName
+                )
+            } catch (e: Exception) {
+                Log.e("VoiceViewModel", "Failed to persist user message", e)
+            }
+        }
+
+        // 3b. Optional transparent AI memory detection (Section 22)
+        if (_isMemoryEnabled.value) {
+            val memoryIntent = com.example.data.memory.AIMemoryManager.extractMemoryIntent(trimmed)
+            if (memoryIntent != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    repository.saveMemory(key = memoryIntent.first, value = memoryIntent.second)
+                }
+            }
+        }
+
+        // 4a. Handle Document Analysis (Section 18 & 40)
+        if (attachedDoc != null) {
+            viewModelScope.launch {
+                _isAiThinking.value = true
+                _streamingAiText.value = null
+                try {
+                    val docResult = documentService.analyzeDocument(attachedDoc, trimmed, dialect)
+                    when (docResult) {
+                        is com.example.data.document.DocumentServiceResult.Success -> {
+                            val assistantTimestamp = System.currentTimeMillis()
+                            val assistantMsg = ConversationMessageEntity(
+                                id = assistantTimestamp,
+                                conversationId = sessionId,
+                                role = "assistant",
+                                text = docResult.responseText,
+                                timestamp = assistantTimestamp,
+                                dialectId = dialect.id,
+                                documentName = docResult.documentName
+                            )
+                            _messages.value = _messages.value + assistantMsg
+                            _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getDocumentSuggestions(dialect)
+
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    repository.saveConversationMessage(
+                                        conversationId = sessionId,
+                                        dialectId = dialect.id,
+                                        role = "assistant",
+                                        text = docResult.responseText,
+                                        documentName = docResult.documentName
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e("VoiceViewModel", "Failed to persist assistant doc message", e)
+                                }
+                            }
+
+                            if (speakResponse && !isMuted.value && docResult.responseText.isNotBlank()) {
+                                speechManager.speak(
+                                    text = docResult.responseText,
+                                    localeCode = dialect.localeCode,
+                                    speechPacing = profile?.voiceSpeed ?: "Natural",
+                                    personalityName = personality.name
+                                )
+                            }
+                        }
+                        is com.example.data.document.DocumentServiceResult.Error -> {
+                            _lastFailedMessage.value = trimmed
+                            _requestError.value = docResult.errorMessage
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("VoiceViewModel", "Document analysis failed", e)
+                    _lastFailedMessage.value = trimmed
+                    _requestError.value = "Document analysis failed. Please try again."
+                } finally {
+                    _isAiThinking.value = false
+                }
+            }
+            return
+        }
+
+        // 4b. Handle Image Generation, Vision Analysis, or Normal Text/Voice AI
+        val isImageGen = attachedImage == null && com.example.data.image.ImageIntentDetector.isImageGenerationRequest(trimmed)
+        val isImageEdit = attachedImage != null && com.example.data.image.ImageIntentDetector.isImageEditRequest(trimmed, true)
+        val isVisionAnalysis = attachedImage != null && !isImageEdit
+
+        if (isImageGen || isImageEdit || isVisionAnalysis) {
+            viewModelScope.launch {
+                _isImageGenerating.value = true
+                _imageLoadingMessage.value = when {
+                    isImageEdit -> "Editing your image..."
+                    isImageGen -> "Creating your image..."
+                    else -> "Analyzing your image..."
                 }
 
-                // Analyze location and query context (Strict separation of Regional Style vs Geographic Location)
-                val userLoc = _userLocation.value
-                val history = _messages.value.takeLast(6).map { it.role to it.text }
+                try {
+                    val result = when {
+                        isImageEdit -> imageService.editImage(attachedImage!!, trimmed, dialect)
+                        isImageGen -> imageService.generateImage(trimmed, dialect)
+                        else -> imageService.analyzeImage(attachedImage!!, trimmed, dialect)
+                    }
+
+                    when (result) {
+                        is com.example.data.image.ImageServiceResult.Success -> {
+                            val assistantTimestamp = System.currentTimeMillis()
+                            val assistantMsg = ConversationMessageEntity(
+                                id = assistantTimestamp,
+                                conversationId = sessionId,
+                                role = "assistant",
+                                text = result.textResponse,
+                                timestamp = assistantTimestamp,
+                                dialectId = dialect.id,
+                                imageUri = result.imagePath,
+                                isImageGeneration = result.isImageGenerated,
+                                imagePrompt = result.promptUsed
+                            )
+                            _messages.value = _messages.value + assistantMsg
+                            _lastFailedMessage.value = null
+
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    repository.saveConversationMessage(
+                                        conversationId = sessionId,
+                                        dialectId = dialect.id,
+                                        role = "assistant",
+                                        text = result.textResponse,
+                                        imageUri = result.imagePath,
+                                        isImageGeneration = result.isImageGenerated,
+                                        imagePrompt = result.promptUsed
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e("VoiceViewModel", "Failed to persist assistant image message", e)
+                                }
+                            }
+
+                            if (result.isImageGenerated) {
+                                _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getGeneratedImageSuggestions(dialect)
+                            } else {
+                                _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.generateSuggestions(
+                                    userMessage = trimmed,
+                                    aiResponse = result.textResponse,
+                                    dialect = dialect
+                                )
+                            }
+
+                            if (speakResponse && !isMuted.value && result.textResponse.isNotBlank()) {
+                                speechManager.speak(
+                                    text = result.textResponse,
+                                    localeCode = dialect.localeCode,
+                                    speechPacing = profile?.voiceSpeed ?: "Natural",
+                                    personalityName = personality.name
+                                )
+                            }
+                        }
+                        is com.example.data.image.ImageServiceResult.Error -> {
+                            _lastFailedMessage.value = trimmed
+                            _requestError.value = result.errorMessage
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("VoiceViewModel", "Image operation failed", e)
+                    _lastFailedMessage.value = trimmed
+                    _requestError.value = "Image operation failed. Please try again."
+                } finally {
+                    _isImageGenerating.value = false
+                    _isAiThinking.value = false
+                }
+            }
+            return
+        }
+
+        // 5. Normal text/voice AI streaming request with timeout
+        viewModelScope.launch {
+            try {
+                val history = _messages.value.filter { it.role != "system" }.takeLast(6).map { it.role to it.text }
                 val queryContext = LocationExtractor.analyzeQuery(
-                    query = userText,
+                    query = trimmed,
                     conversationHistory = history,
                     userLocation = userLoc
                 )
                 val targetLocation = queryContext.requestedLocation
 
-                // Check real-time knowledge specifically for targetLocation (NOT Kerala by default!)
-                val verifiedKnowledge = repository.checkRealTimeKnowledge(
-                    query = userText,
-                    dialect = dialect,
-                    forceWeb = _isWebSearchEnabled.value,
-                    resolvedLocation = targetLocation,
-                    userLocation = userLoc,
-                    history = history
-                )
-
-                // Save user message to DB
-                repository.saveConversationMessage(
-                    conversationId = currentSession.id,
-                    dialectId = dialect.id,
-                    role = "user",
-                    text = userText
-                )
-
                 val aiRequest = AIRequest(
-                    message = userText,
+                    message = trimmed,
                     regionalProfile = _selectedRegionProfile.value,
                     queryLocation = targetLocation,
                     userLocation = userLoc,
@@ -597,34 +963,82 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                     conversationHistory = history
                 )
 
-                val aiResponse = repository.getAiVoiceResponse(
-                    request = aiRequest,
-                    strength = strength,
-                    personality = personality,
-                    slangEnabled = slangEnabled,
-                    responseLength = responseLength,
-                    naturalMixingEnabled = naturalMixing,
-                    customPromptNotes = customPromptNotes
-                )
+                val fullStreamBuilder = StringBuilder()
 
-                // Detect dialect slang used in AI message for quick tapping
+                val activeMemories = if (_isMemoryEnabled.value) {
+                    repository.getActiveMemoriesList()
+                } else emptyList()
+                val memoryDirectives = com.example.data.memory.AIMemoryManager.formatMemoriesForPrompt(activeMemories)
+                val effectiveCustomPromptNotes = if (memoryDirectives.isNotBlank()) {
+                    "$customPromptNotes\n$memoryDirectives".trim()
+                } else customPromptNotes
+
+                val aiResponse = withTimeout(25000L) {
+                    repository.streamAiVoiceResponse(
+                        request = aiRequest,
+                        strength = strength,
+                        personality = personality,
+                        slangEnabled = slangEnabled,
+                        responseLength = responseLength,
+                        naturalMixingEnabled = naturalMixing,
+                        customPromptNotes = effectiveCustomPromptNotes,
+                        inputSource = if (speakResponse) "VOICE" else "TEXT",
+                        conversationId = sessionId,
+                        onFirstToken = {
+                            _isAiThinking.value = false
+                            Log.d("VoiceAiPerf", "UI_UPDATED [t=${System.currentTimeMillis() - startTime}ms] first token received")
+                        },
+                        onToken = { token ->
+                            fullStreamBuilder.append(token)
+                            _streamingAiText.value = fullStreamBuilder.toString()
+                        }
+                    )
+                }
+
+                Log.d("VoiceAiPerf", "AI_RESPONSE_COMPLETED [t=${System.currentTimeMillis() - startTime}ms] length=${aiResponse.length}")
+
                 val detectedSlang = dialect.typicalExpressions.filter {
                     aiResponse.contains(it.expression, ignoreCase = true)
                 }.map { it.expression }
 
-                // Save AI message to DB with verified real-time knowledge details
-                repository.saveConversationMessage(
-                    conversationId = currentSession.id,
-                    dialectId = dialect.id,
+                // Save assistant message to DB asynchronously
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        repository.saveConversationMessage(
+                            conversationId = sessionId,
+                            dialectId = dialect.id,
+                            role = "assistant",
+                            text = aiResponse,
+                            highlightedSlang = detectedSlang
+                        )
+                    } catch (e: Exception) {
+                        Log.e("VoiceViewModel", "Failed to persist assistant message", e)
+                    }
+                }
+
+                // Append assistant message in UI state
+                val assistantTimestamp = System.currentTimeMillis()
+                val tempAssistantMsg = ConversationMessageEntity(
+                    id = assistantTimestamp,
+                    conversationId = sessionId,
                     role = "assistant",
                     text = aiResponse,
-                    highlightedSlang = detectedSlang,
-                    knowledge = verifiedKnowledge
+                    timestamp = assistantTimestamp,
+                    dialectId = dialect.id,
+                    highlightedSlangCsv = detectedSlang.joinToString(",")
                 )
+                _messages.value = _messages.value + tempAssistantMsg
+                _streamingAiText.value = null
+                _isAiThinking.value = false
+                _lastFailedMessage.value = null
+                _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.generateSuggestions(
+                    userMessage = trimmed,
+                    aiResponse = aiResponse,
+                    dialect = dialect
+                )
+                Log.d("VoiceAiPerf", "UI_UPDATED [t=${System.currentTimeMillis() - startTime}ms] final response rendered & suggestions updated")
 
-                // Speak response via dynamic natural adult voice if speakResponse is requested
                 if (speakResponse && !isMuted.value) {
-                    kotlinx.coroutines.delay(350)
                     val pacing = profile?.voiceSpeed ?: "Natural"
                     speechManager.speak(
                         text = aiResponse,
@@ -633,6 +1047,18 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                         personalityName = personality.name
                     )
                 }
+            } catch (te: kotlinx.coroutines.TimeoutCancellationException) {
+                Log.e("VoiceViewModel", "AI request timed out", te)
+                _isAiThinking.value = false
+                _streamingAiText.value = null
+                _lastFailedMessage.value = trimmed
+                _requestError.value = "Request timed out. Tap Retry to try again."
+            } catch (e: Exception) {
+                Log.e("VoiceViewModel", "AI request failed", e)
+                _isAiThinking.value = false
+                _streamingAiText.value = null
+                _lastFailedMessage.value = trimmed
+                _requestError.value = "Unable to connect. Tap Retry to try again."
             } finally {
                 _isAiThinking.value = false
             }
@@ -641,11 +1067,16 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNewConversation() {
         val dialect = _currentDialect.value
-        viewModelScope.launch {
-            val newSession = repository.createNewSession("New Chat with ${dialect.dialectName}", dialect.id)
-            _activeSession.value = newSession
-            loadMessagesForSession(newSession.id)
-        }
+        _messages.value = emptyList()
+        _streamingAiText.value = null
+        _isAiThinking.value = false
+        _requestError.value = null
+        _lastFailedMessage.value = null
+        _activeSession.value = null
+        _attachedImageUri.value = null
+        _isImageGenerating.value = false
+        _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(dialect)
+        _isChatWindowOpen.value = true
     }
 
     fun selectConversation(session: ConversationSessionEntity) {
@@ -653,6 +1084,22 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val dialect = DialectCatalog.getDialectById(session.dialectId)
         _currentDialect.value = dialect
         loadMessagesForSession(session.id)
+        _isChatWindowOpen.value = true
+        viewModelScope.launch {
+            repository.getMessagesForConversation(session.id).collect { msgList ->
+                val lastUser = msgList.lastOrNull { it.role == "user" }?.text ?: ""
+                val lastAi = msgList.lastOrNull { it.role == "assistant" }?.text ?: ""
+                if (lastUser.isNotBlank()) {
+                    _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.generateSuggestions(
+                        userMessage = lastUser,
+                        aiResponse = lastAi,
+                        dialect = dialect
+                    )
+                } else {
+                    _chatSuggestions.value = com.example.data.suggestions.DynamicSuggestionEngine.getInitialSuggestions(dialect)
+                }
+            }
+        }
     }
 
     fun togglePinConversation(session: ConversationSessionEntity) {

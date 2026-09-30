@@ -54,7 +54,39 @@ data class ConversationMessageEntity(
     val isRealTimeKnowledge: Boolean = false,
     val sourcesCsv: String = "",
     val knowledgeFreshness: String = "", // STATIC, CURRENT, RECENT, HISTORICAL
-    val knowledgeTimestamp: String = ""
+    val knowledgeTimestamp: String = "",
+    val imageUri: String? = null,
+    val isImageGeneration: Boolean = false,
+    val imagePrompt: String = "",
+    val attachedImageUri: String? = null,
+    val documentUri: String? = null,
+    val documentName: String? = null
+)
+
+@Entity(tableName = "saved_items")
+data class SavedItemEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val title: String,
+    val content: String,
+    val itemType: String = "ANSWER", // "ANSWER", "IMAGE", "WRITING", "DOCUMENT", "EXPLANATION"
+    val mediaUri: String? = null,
+    val prompt: String = "",
+    val dialectId: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val tags: String = ""
+)
+
+@Entity(tableName = "ai_memories")
+data class MemoryItemEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val key: String,
+    val value: String,
+    val category: String = "Preference", // "Preference", "Personal", "Work", "General"
+    val isEnabled: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "dictionary_entries")

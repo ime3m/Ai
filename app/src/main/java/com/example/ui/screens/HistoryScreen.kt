@@ -671,9 +671,17 @@ private fun PersistedMessageHistoryCard(
     val dialect = remember(message.dialectId) {
         DialectCatalog.getDialectById(message.dialectId)
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val formattedTime = remember(message.timestamp) {
-        val sdf = SimpleDateFormat("MMM d, yyyy · h:mm a", Locale.getDefault())
-        sdf.format(Date(message.timestamp))
+        if (message.timestamp <= 0L) {
+            ""
+        } else {
+            val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+            val timePattern = if (is24Hour) "HH:mm" else "h:mm a"
+            val sdf = SimpleDateFormat("MMM d, yyyy · $timePattern", Locale.getDefault())
+            sdf.timeZone = java.util.TimeZone.getDefault()
+            sdf.format(Date(message.timestamp))
+        }
     }
 
     Card(

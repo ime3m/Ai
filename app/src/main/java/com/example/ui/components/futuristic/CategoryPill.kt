@@ -22,8 +22,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.ripple.rememberRipple
@@ -60,11 +65,17 @@ enum class FuturisticCategory(
     val icon: ImageVector,
     val tag: String
 ) {
-    VOICE("Voice", Icons.Default.Mic, "cat_pill_voice"),
+    VOICE("Voice AI", Icons.Default.Mic, "cat_pill_voice"),
+    CREATE("Create", Icons.Default.AutoAwesome, "cat_pill_create"),
+    CONVERSATION("History", Icons.AutoMirrored.Filled.Chat, "cat_pill_conversation"),
+    SAVED("Saved", Icons.Default.Star, "cat_pill_saved"),
+    WRITING("Writing", Icons.Default.Edit, "cat_pill_writing"),
+    DOCUMENTS("Documents", Icons.Default.Description, "cat_pill_documents"),
+    INSIGHTS("Insights", Icons.Default.AutoAwesome, "cat_pill_insights"),
     LANGUAGES("Languages", Icons.Default.Public, "cat_pill_languages"),
+    MEMORY("Memory", Icons.Default.Psychology, "cat_pill_memory"),
     ACCENTS("Accents", Icons.Default.Tune, "cat_pill_accents"),
-    TRANSLATE("Translate", Icons.Default.Translate, "cat_pill_translate"),
-    CONVERSATION("Conversation", Icons.AutoMirrored.Filled.Chat, "cat_pill_conversation")
+    TRANSLATE("Translate", Icons.Default.Translate, "cat_pill_translate")
 }
 
 /**

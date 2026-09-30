@@ -106,7 +106,7 @@ val FuturisticTheme: FuturisticColorPalette
     @Composable
     @ReadOnlyComposable
     get() {
-        val isDark = isSystemInDarkTheme()
+        val isDark = LocalAppTheme.current.metadata.isDark
         return if (isDark) {
             FuturisticColorPalette(
                 background = FuturisticTokens.DarkColors.background,

@@ -44,8 +44,9 @@ class GeminiVoiceService {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val candidateModels = listOf(
-        "gemini-3.5-flash",
         "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-2.5-flash-lite",
         "gemini-3.1-flash-lite-preview"
     )
     private val modelCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -63,8 +64,78 @@ class GeminiVoiceService {
         modelCooldowns[model] = System.currentTimeMillis() + (cooldownSeconds * 1000)
     }
 
-    private fun getModelUrl(model: String): String {
-        return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+    private fun getModelUrl(model: String, streaming: Boolean = false): String {
+        val action = if (streaming) "streamGenerateContent?alt=sse" else "generateContent"
+        return "https://generativelanguage.googleapis.com/v1beta/models/$model:$action"
+    }
+
+    private suspend fun executeGeminiStream(
+        requestJson: JSONObject,
+        apiKey: String,
+        startTime: Long,
+        onFirstToken: () -> Unit,
+        onToken: (String) -> Unit
+    ): String? = withContext(Dispatchers.IO) {
+        val models = getAvailableModels()
+        for (model in models) {
+            try {
+                val url = "${getModelUrl(model, streaming = true)}&key=$apiKey"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestJson.toString().toRequestBody(jsonMediaType))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val bodyStream = response.body?.byteStream() ?: continue
+                    val reader = java.io.BufferedReader(java.io.InputStreamReader(bodyStream))
+                    val fullResponse = StringBuilder()
+                    var isFirstToken = true
+                    var line = reader.readLine()
+                    while (line != null) {
+                        if (line.startsWith("data: ")) {
+                            val jsonStr = line.substring(6).trim()
+                            if (jsonStr.isNotEmpty() && jsonStr != "[DONE]") {
+                                try {
+                                    val chunkJson = JSONObject(jsonStr)
+                                    val candidates = chunkJson.optJSONArray("candidates")
+                                    val firstCandidate = candidates?.optJSONObject(0)
+                                    val content = firstCandidate?.optJSONObject("content")
+                                    val parts = content?.optJSONArray("parts")
+                                    val partText = parts?.optJSONObject(0)?.optString("text")
+                                    if (!partText.isNullOrEmpty()) {
+                                        if (isFirstToken) {
+                                            isFirstToken = false
+                                            Log.d("VoiceAiPerf", "FIRST_AI_TOKEN_RECEIVED [t=${System.currentTimeMillis() - startTime}ms]")
+                                            onFirstToken()
+                                        }
+                                        fullResponse.append(partText)
+                                        onToken(partText)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        line = reader.readLine()
+                    }
+                    val text = fullResponse.toString()
+                    if (text.isNotBlank()) {
+                        Log.d("VoiceAiPerf", "AI_RESPONSE_COMPLETED [t=${System.currentTimeMillis() - startTime}ms] length=${text.length}")
+                        return@withContext cleanVoiceResponse(text)
+                    }
+                } else if (response.code == 429) {
+                    markModelRateLimited(model, 60)
+                    Log.w("GeminiVoiceService", "Model $model quota/rate limited (429). Trying fallback model...")
+                    continue
+                } else {
+                    Log.w("GeminiVoiceService", "Model $model streaming returned error ${response.code}")
+                    continue
+                }
+            } catch (e: Exception) {
+                Log.w("GeminiVoiceService", "Model $model streaming failed", e)
+                continue
+            }
+        }
+        null
     }
 
     private fun executeGeminiPost(
@@ -164,6 +235,168 @@ class GeminiVoiceService {
             Log.e("GeminiVoiceService", "Error during Gemini audio transcription", e)
             null
         }
+    }
+
+    suspend fun streamVoiceResponse(
+        request: AIRequest,
+        regionalStrength: Float = 0.75f,
+        personality: VoicePersonality = VoicePersonality.FRIENDLY,
+        speakingStyle: SpeakingStylePreferenceEntity? = null,
+        slangEnabled: Boolean = true,
+        responseLength: String = "Balanced",
+        naturalMixingEnabled: Boolean = true,
+        customPromptNotes: String = "",
+        inputSource: String = "TEXT",
+        conversationId: String = "conv_default",
+        onFirstToken: () -> Unit = {},
+        onToken: (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+        Log.d("VoiceAiPerf", "REQUEST_STARTED [t=0ms] inputSource=$inputSource")
+
+        val userMessage = request.message
+        val dialect = request.regionalProfile.toRegionalDialect()
+        val queryContext = request.queryContext ?: LocationExtractor.analyzeQuery(
+            query = userMessage,
+            conversationHistory = request.conversationHistory,
+            userLocation = request.userLocation
+        )
+        val targetLocation = request.queryLocation ?: queryContext.requestedLocation
+        val intent = queryContext.intent ?: UniversalReasoningEngine.classifyIntent(userMessage)
+
+        // Avoid unnecessary external calls: only query real-time data when question requires it
+        val isTimeSensitive = intent == UserIntent.CURRENT_INFORMATION ||
+                queryContext.isLocationDependentQuery ||
+                RealTimeKnowledgeEngine.requiresRealTimeRetrieval(userMessage)
+
+        val verifiedKnowledge = if (isTimeSensitive) {
+            RealTimeKnowledgeEngine.retrieveVerifiedKnowledge(
+                query = userMessage,
+                dialect = dialect,
+                resolvedLocation = targetLocation,
+                userLocation = request.userLocation,
+                conversationHistory = request.conversationHistory
+            )
+        } else null
+
+        val apiKey = getApiKey()
+        var streamResult: String? = null
+
+        if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
+            try {
+                val systemPrompt = buildSystemPrompt(
+                    dialect = dialect,
+                    regionalStrength = regionalStrength,
+                    personality = personality,
+                    speakingStyle = speakingStyle,
+                    slangEnabled = slangEnabled,
+                    responseLength = responseLength,
+                    naturalMixingEnabled = naturalMixingEnabled,
+                    customPromptNotes = customPromptNotes,
+                    groundingFact = verifiedKnowledge?.factualText,
+                    intent = intent,
+                    queryLocation = targetLocation,
+                    userLocation = request.userLocation,
+                    queryContext = queryContext
+                )
+
+                Log.d("VoiceAiPerf", "PROMPT_READY [t=${System.currentTimeMillis() - startTime}ms]")
+
+                val requestJson = JSONObject()
+                val sysInstructionObj = JSONObject()
+                val sysParts = JSONArray()
+                sysParts.put(JSONObject().put("text", systemPrompt))
+                sysInstructionObj.put("parts", sysParts)
+                requestJson.put("systemInstruction", sysInstructionObj)
+
+                val contentsArray = JSONArray()
+                val recentHistory = request.conversationHistory.takeLast(6)
+                for ((role, text) in recentHistory) {
+                    val turnObj = JSONObject()
+                    val apiRole = if (role == "user") "user" else "model"
+                    turnObj.put("role", apiRole)
+                    val parts = JSONArray()
+                    parts.put(JSONObject().put("text", text))
+                    turnObj.put("parts", parts)
+                    contentsArray.put(turnObj)
+                }
+
+                val currentTurn = JSONObject()
+                currentTurn.put("role", "user")
+                val currentParts = JSONArray()
+                currentParts.put(JSONObject().put("text", "[PRIMARY USER REQUEST - INTENT: ${intent.name}]\n$userMessage"))
+                currentTurn.put("parts", currentParts)
+                contentsArray.put(currentTurn)
+                requestJson.put("contents", contentsArray)
+
+                val config = JSONObject()
+                config.put("temperature", 0.70)
+                config.put("topP", 0.95)
+                requestJson.put("generationConfig", config)
+
+                Log.d("VoiceAiPerf", "NETWORK_REQUEST_STARTED [t=${System.currentTimeMillis() - startTime}ms]")
+                streamResult = executeGeminiStream(
+                    requestJson = requestJson,
+                    apiKey = apiKey,
+                    startTime = startTime,
+                    onFirstToken = onFirstToken,
+                    onToken = onToken
+                )
+            } catch (e: Exception) {
+                Log.e("GeminiVoiceService", "Streaming request exception", e)
+            }
+        }
+
+        val finalResponse = if (!streamResult.isNullOrBlank()) {
+            streamResult
+        } else {
+            val fallback = if (verifiedKnowledge != null) {
+                verifiedKnowledge.dialectText
+            } else {
+                UniversalReasoningEngine.generateKnowledgeAnswer(
+                    query = userMessage,
+                    intent = intent,
+                    dialect = dialect,
+                    strength = regionalStrength,
+                    personality = personality,
+                    history = request.conversationHistory,
+                    queryLocation = targetLocation,
+                    userLocation = request.userLocation
+                )
+            }
+            onFirstToken()
+            onToken(fallback)
+            fallback
+        }
+
+        ResponseQualitySystem.recordResponse(finalResponse)
+        val trace = AiResponseTrace(
+            messageId = "msg_${System.currentTimeMillis()}",
+            conversationId = conversationId,
+            userInput = userMessage,
+            inputSource = inputSource,
+            detectedLanguage = dialect.language,
+            detectedRegion = "${dialect.cityOrArea}, ${dialect.region}",
+            detectedIntent = intent,
+            currentInformationRequired = isTimeSensitive,
+            retrievalUsed = verifiedKnowledge != null,
+            retrievalSources = verifiedKnowledge?.sources?.map { it.name } ?: emptyList(),
+            systemPromptVersion = "v2.0-IntentFirst",
+            modelRequestCreated = true,
+            modelRequestSent = true,
+            modelResponseReceived = streamResult != null,
+            rawAiResponse = finalResponse,
+            responseLength = finalResponse.length,
+            genericResponseDetected = false,
+            relevanceCheck = "PASS",
+            regenerationTriggered = false,
+            regenerationReason = "",
+            finalResponse = finalResponse,
+            ttsStarted = true
+        )
+        _latestTrace.value = trace
+
+        finalResponse
     }
 
     suspend fun generateVoiceResponse(

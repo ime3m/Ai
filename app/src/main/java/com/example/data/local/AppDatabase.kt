@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 import com.example.data.model.ConversationMessageEntity
 import com.example.data.model.ConversationSessionEntity
 import com.example.data.model.DictionaryEntryEntity
+import com.example.data.model.MemoryItemEntity
+import com.example.data.model.SavedItemEntity
 import com.example.data.model.SpeakingStylePreferenceEntity
 import com.example.data.model.VoiceProfileEntity
 
@@ -16,9 +18,11 @@ import com.example.data.model.VoiceProfileEntity
         ConversationSessionEntity::class,
         ConversationMessageEntity::class,
         DictionaryEntryEntity::class,
-        SpeakingStylePreferenceEntity::class
+        SpeakingStylePreferenceEntity::class,
+        SavedItemEntity::class,
+        MemoryItemEntity::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

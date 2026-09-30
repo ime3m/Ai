@@ -167,4 +167,22 @@ object DateTimeService {
             else -> ZoneId.systemDefault()
         }
     }
+
+    /**
+     * Formats a message timestamp into user's local time (e.g. "4:32 AM" or "16:32").
+     * Automatically adapts to device's local timezone and 12-hour/24-hour preference.
+     * Gracefully returns empty string if timestamp is invalid (<= 0).
+     */
+    fun formatMessageTime(context: android.content.Context, timestamp: Long): String {
+        if (timestamp <= 0L) return ""
+        return try {
+            val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+            val pattern = if (is24Hour) "HH:mm" else "h:mm a"
+            val sdf = java.text.SimpleDateFormat(pattern, Locale.getDefault())
+            sdf.timeZone = java.util.TimeZone.getDefault()
+            sdf.format(java.util.Date(timestamp))
+        } catch (e: Exception) {
+            ""
+        }
+    }
 }

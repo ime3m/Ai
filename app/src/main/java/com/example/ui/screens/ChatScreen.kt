@@ -661,8 +661,9 @@ private fun SharedMessageBubble(
     onRegenerate: (() -> Unit)?
 ) {
     val isUser = message.role == "user"
+    val context = androidx.compose.ui.platform.LocalContext.current
     val timeFormatted = remember(message.timestamp) {
-        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestamp))
+        com.example.data.datetime.DateTimeService.formatMessageTime(context, message.timestamp)
     }
 
     Column(

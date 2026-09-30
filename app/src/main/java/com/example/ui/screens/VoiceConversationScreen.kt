@@ -589,19 +589,37 @@ fun CleanMessageItem(
     onRegenerate: (() -> Unit)? = null
 ) {
     val isUser = message.role == "user"
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val timeFormatted = remember(message.timestamp) {
+        com.example.data.datetime.DateTimeService.formatMessageTime(context, message.timestamp)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(if (isUser) "user_message_item" else "ai_message_item")
     ) {
-        // Sender label
-        Text(
-            text = if (isUser) "You" else "${dialect.cityOrArea} AI",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // Sender label and timestamp
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isUser) "You" else "${dialect.cityOrArea} AI",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (timeFormatted.isNotBlank()) {
+                Text(
+                    text = timeFormatted,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(4.dp))
 
