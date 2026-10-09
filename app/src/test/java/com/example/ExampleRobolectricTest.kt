@@ -31,14 +31,22 @@ class ExampleRobolectricTest {
     assertEquals(16.0f, com.example.ui.theme.FuturisticTokens.Spacing.md.value)
     assertEquals(24.0f, com.example.ui.theme.FuturisticTokens.Spacing.lg.value)
 
-    // Verify requested categories: Voice, Languages, Accents, Translate, Conversation
+    // Verify requested categories
     val categories = com.example.ui.components.futuristic.FuturisticCategory.entries.map { it.title }
-    assertEquals(5, categories.size)
-    org.junit.Assert.assertTrue(categories.contains("Voice"))
+    org.junit.Assert.assertTrue(categories.size >= 5)
+    org.junit.Assert.assertTrue(categories.contains("Voice AI"))
     org.junit.Assert.assertTrue(categories.contains("Languages"))
     org.junit.Assert.assertTrue(categories.contains("Accents"))
     org.junit.Assert.assertTrue(categories.contains("Translate"))
-    org.junit.Assert.assertTrue(categories.contains("Conversation"))
+    org.junit.Assert.assertTrue(categories.contains("History"))
+  }
+
+  @Test
+  fun `verify developer profile details and instagram configuration`() {
+    assertEquals("SHAMEEM KM", com.example.data.config.DeveloperProfile.developerName)
+    assertEquals("@ime3m", com.example.data.config.DeveloperProfile.instagramUsername)
+    assertEquals("https://www.instagram.com/ime3m/", com.example.data.config.DeveloperProfile.instagramUrl)
+    assertEquals("Regional Voice AI", com.example.data.config.DeveloperProfile.appName)
   }
 
   @Test

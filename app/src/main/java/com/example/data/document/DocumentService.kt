@@ -49,11 +49,7 @@ class DocumentService(
     )
 
     private fun getApiKey(): String {
-        return try {
-            BuildConfig.GEMINI_API_KEY
-        } catch (_: Exception) {
-            ""
-        }
+        return com.example.data.ai.AIApiKeyProvider.getApiKey(context)
     }
 
     /**

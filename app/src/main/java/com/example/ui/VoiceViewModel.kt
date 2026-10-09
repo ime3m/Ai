@@ -49,6 +49,14 @@ enum class InputMode {
     VOICE, WRITE
 }
 
+data class ImageErrorInfo(
+    val title: String = "Image generation unavailable",
+    val description: String = "The image service has reached its current API limit.",
+    val technicalDetails: String? = null,
+    val failedPrompt: String = "",
+    val canRetry: Boolean = true
+)
+
 data class SlangTranslationUiState(
     val inputText: String = "",
     val sourceDialect: String = "Standard Malayalam",
@@ -80,7 +88,7 @@ data class StyleRewriteUiState(
 class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getInstance(application)
-    private val geminiService = GeminiVoiceService()
+    private val geminiService = GeminiVoiceService(application)
     val repository = VoiceRepository(database.voiceDao(), geminiService)
     val speechManager = VoiceSpeechManager(application)
     val preferencesRepository = com.example.data.preferences.PreferencesRepository(application)
@@ -232,8 +240,11 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     private val _isImageGenerating = MutableStateFlow(false)
     val isImageGenerating: StateFlow<Boolean> = _isImageGenerating.asStateFlow()
 
-    private val _imageLoadingMessage = MutableStateFlow("Creating your image...")
+    private val _imageLoadingMessage = MutableStateFlow("Creating image...")
     val imageLoadingMessage: StateFlow<String> = _imageLoadingMessage.asStateFlow()
+
+    private val _lastImageError = MutableStateFlow<ImageErrorInfo?>(null)
+    val lastImageError: StateFlow<ImageErrorInfo?> = _lastImageError.asStateFlow()
 
     // --- Saved Items (Section 11) ---
     val allSavedItems: StateFlow<List<com.example.data.model.SavedItemEntity>> = repository.allSavedItems
@@ -343,6 +354,27 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     fun regenerateImage(prompt: String) {
         sendChatMessage(prompt, speakResponse = !isMuted.value)
     }
+
+    fun retryImageGeneration() {
+        val err = _lastImageError.value
+        val prompt = err?.failedPrompt ?: _lastFailedMessage.value
+        if (!prompt.isNullOrBlank() && !_isImageGenerating.value && !_isAiThinking.value) {
+            _lastImageError.value = null
+            _requestError.value = null
+            sendChatMessage(prompt, speakResponse = !isMuted.value)
+        }
+    }
+
+    fun dismissImageError() {
+        _lastImageError.value = null
+        _requestError.value = null
+    }
+
+    fun setCustomApiKey(key: String) {
+        preferencesRepository.customApiKey = if (key.isBlank()) null else key.trim()
+    }
+
+    fun getCustomApiKey(): String = preferencesRepository.customApiKey ?: ""
 
     fun openChatWindow() {
         _isChatWindowOpen.value = true
@@ -697,7 +729,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendChatMessage(userText: String, speakResponse: Boolean = (_inputMode.value == InputMode.VOICE)) {
         val trimmed = userText.trim()
-        if (trimmed.isEmpty() || _isAiThinking.value) return
+        if (trimmed.isEmpty() || _isAiThinking.value || _isImageGenerating.value) return
 
         val startTime = System.currentTimeMillis()
         Log.d("VoiceAiPerf", "REQUEST_STARTED [t=0ms]")
@@ -713,9 +745,15 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
         val customPromptNotes = profile?.customPromptNotes ?: ""
         val userLoc = _userLocation.value
 
+        if (_isAiThinking.value || _isImageGenerating.value) {
+            Log.d("VoiceViewModel", "Duplicate submission dropped: AI or Image generation already in progress")
+            return
+        }
+
         _isAiThinking.value = true
         _streamingAiText.value = null
         _requestError.value = null
+        _lastImageError.value = null
         _isChatWindowOpen.value = true
 
         // 1. Instant session resolution with meaningful title generation
@@ -927,12 +965,26 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                         is com.example.data.image.ImageServiceResult.Error -> {
+                            _lastImageError.value = ImageErrorInfo(
+                                title = result.errorTitle,
+                                description = result.errorMessage,
+                                technicalDetails = result.technicalDetails,
+                                failedPrompt = trimmed,
+                                canRetry = result.canRetry
+                            )
                             _lastFailedMessage.value = trimmed
                             _requestError.value = result.errorMessage
                         }
                     }
                 } catch (e: Exception) {
                     Log.e("VoiceViewModel", "Image operation failed", e)
+                    _lastImageError.value = ImageErrorInfo(
+                        title = "Image operation failed",
+                        description = "An error occurred while generating the image. Please try again.",
+                        technicalDetails = e.localizedMessage,
+                        failedPrompt = trimmed,
+                        canRetry = true
+                    )
                     _lastFailedMessage.value = trimmed
                     _requestError.value = "Image operation failed. Please try again."
                 } finally {

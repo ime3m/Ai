@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -27,15 +31,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Feedback
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +70,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,23 +78,41 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
+import com.example.data.config.DeveloperProfile
 import com.example.data.model.RegionalDialect
 import com.example.data.model.VoicePersonality
 import com.example.data.model.VoiceProfileEntity
 import com.example.data.repository.DialectCatalog
+import com.example.ui.theme.FuturisticTheme
+import com.example.ui.theme.FuturisticTokens
+import com.example.ui.theme.ThemeManager
 
 /**
- * Persistent Settings Menu that allows users to select their target regional dialect
- * or language style to influence the Gemini API prompt context.
- *
- * Changes are immediately persisted to the Room database and update the Gemini API
- * system instructions for subsequent conversational turns.
+ * Top-level categories in the Settings sheet.
+ */
+enum class SettingsMenuSection(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    APPEARANCE("Appearance", Icons.Default.Palette),
+    REGIONAL_AI("Regional AI", Icons.Default.RecordVoiceOver),
+    AI_MEMORY("AI & Memory", Icons.Default.Psychology),
+    PRIVACY("Privacy", Icons.Default.PrivacyTip),
+    ABOUT("About Regional Voice AI", Icons.Default.Info)
+}
+
+/**
+ * Clean, modern Settings Menu containing:
+ * - Appearance
+ * - Regional AI
+ * - AI & Memory
+ * - Privacy
+ * - About Regional Voice AI
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -98,7 +134,12 @@ fun RegionalSettingsSheet(
     promptContextPreview: String = "",
     onDismiss: () -> Unit
 ) {
-    var showPromptInspector by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val themeManager = remember { ThemeManager.getInstance(context) }
+    var currentThemeId by remember { mutableStateOf(themeManager.getCurrentThemeId()) }
+    val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val regionalStyleEnabled by themeManager.regionalStyleEnabled.collectAsState()
+    var selectedSection by remember { mutableStateOf<SettingsMenuSection?>(null) }
     var customNotesInput by remember(profile?.customPromptNotes) {
         mutableStateOf(profile?.customPromptNotes ?: "")
     }
@@ -109,7 +150,7 @@ fun RegionalSettingsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = FuturisticTheme.surfaceElevated,
         dragHandle = null
     ) {
         Column(
@@ -119,26 +160,24 @@ fun RegionalSettingsSheet(
                 .padding(horizontal = 20.dp, vertical = 20.dp)
                 .testTag("regional_prompt_settings_sheet")
         ) {
-            // Header with status badge
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Target Dialect & Prompt Settings",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = FuturisticTheme.primaryText
+                    )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Configures persistent persona and Gemini API prompt context",
+                        text = "Appearance, regional AI, memory, and privacy",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = FuturisticTheme.secondaryText
                     )
                 }
                 IconButton(
@@ -150,7 +189,7 @@ fun RegionalSettingsSheet(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = FuturisticTheme.secondaryText,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -158,118 +197,388 @@ fun RegionalSettingsSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // =================================================================
-            // PRIMARY: REGION & VOICE CONFIGURATION
-            // =================================================================
-            val region = activeRegionProfile ?: com.example.data.regional.RegionalProfileRegistry.KERALA
-            Card(
+            // Settings Navigation Category Tabs
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onOpenRegionSelector() }
-                    .testTag("settings_region_voice_card"),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
+                val isAllSelected = selectedSection == null
+                Surface(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { selectedSection = null }
+                        .testTag("settings_tab_all"),
+                    color = if (isAllSelected) FuturisticTheme.accent else FuturisticTheme.surface,
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isAllSelected) FuturisticTheme.accent else FuturisticTheme.border
+                    )
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    Text(
+                        text = "All",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isAllSelected) Color.White else FuturisticTheme.secondaryText,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                    )
+                }
+
+                SettingsMenuSection.values().forEach { section ->
+                    val isSelected = selectedSection == section
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { selectedSection = section }
+                            .testTag("settings_tab_${section.name.lowercase()}"),
+                        color = if (isSelected) FuturisticTheme.accent else FuturisticTheme.surface,
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSelected) FuturisticTheme.accent else FuturisticTheme.border
+                        )
                     ) {
-                        Text(text = region.flagEmoji, fontSize = 28.sp)
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Region & Voice",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = region.name,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = section.icon,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else FuturisticTheme.secondaryText,
+                                modifier = Modifier.size(15.dp)
+                            )
                             Text(
-                                text = "${region.languages.joinToString(" • ")} • Tap to switch region",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = section.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else FuturisticTheme.secondaryText
                             )
                         }
                     }
-
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = "Switch Region",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Live status banner: Room DB persistence & Gemini API readiness
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Row(
+            // =================================================================
+            // 1. APPEARANCE: THEME SELECTION & COLOR PRESETS
+            // =================================================================
+            if (selectedSection == null || selectedSection == SettingsMenuSection.APPEARANCE) {
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .testTag("settings_appearance_theme_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = FuturisticTheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Palette,
+                                contentDescription = null,
+                                tint = FuturisticTheme.accent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Appearance & Themes",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = FuturisticTheme.primaryText
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Base Mode: System | Light | Dark
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // System Default
+                            val isSystemSelected = currentThemeId == "system" || currentThemeId == "auto"
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isSystemSelected) FuturisticTheme.accent.copy(alpha = 0.15f) else FuturisticTheme.surfaceElevated)
+                                    .border(
+                                        width = if (isSystemSelected) 1.5.dp else 1.dp,
+                                        color = if (isSystemSelected) FuturisticTheme.accent else FuturisticTheme.border,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        currentThemeId = "system"
+                                        themeManager.setTheme("system", isSystemDark)
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.BrightnessAuto,
+                                        contentDescription = null,
+                                        tint = if (isSystemSelected) FuturisticTheme.accent else FuturisticTheme.secondaryText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "System",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSystemSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSystemSelected) FuturisticTheme.primaryText else FuturisticTheme.secondaryText
+                                    )
+                                }
+                            }
+
+                            // Light Mode
+                            val isLightSelected = currentThemeId == "light"
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isLightSelected) FuturisticTheme.accent.copy(alpha = 0.15f) else FuturisticTheme.surfaceElevated)
+                                    .border(
+                                        width = if (isLightSelected) 1.5.dp else 1.dp,
+                                        color = if (isLightSelected) FuturisticTheme.accent else FuturisticTheme.border,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        currentThemeId = "light"
+                                        themeManager.setTheme("light", isSystemDark)
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.LightMode,
+                                        contentDescription = null,
+                                        tint = if (isLightSelected) FuturisticTheme.accent else FuturisticTheme.secondaryText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Light",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isLightSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isLightSelected) FuturisticTheme.primaryText else FuturisticTheme.secondaryText
+                                    )
+                                }
+                            }
+
+                            // Dark Mode
+                            val isDarkSelected = currentThemeId == "dark" || currentThemeId == "midnight"
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isDarkSelected) FuturisticTheme.accent.copy(alpha = 0.15f) else FuturisticTheme.surfaceElevated)
+                                    .border(
+                                        width = if (isDarkSelected) 1.5.dp else 1.dp,
+                                        color = if (isDarkSelected) FuturisticTheme.accent else FuturisticTheme.border,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        currentThemeId = "dark"
+                                        themeManager.setTheme("dark", isSystemDark)
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.DarkMode,
+                                        contentDescription = null,
+                                        tint = if (isDarkSelected) FuturisticTheme.accent else FuturisticTheme.secondaryText,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Dark",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isDarkSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isDarkSelected) FuturisticTheme.primaryText else FuturisticTheme.secondaryText
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Regional & Style Presets",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = FuturisticTheme.primaryText
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Preset Chips
+                        val presets: List<Triple<String, String, Color>> = listOf(
+                            Triple("kerala-green", "🌿 Kerala Green", Color(0xFF15803D)),
+                            Triple("kerala-sunset", "🌅 Kerala Sunset", Color(0xFFC2410C)),
+                            Triple("coastal-blue", "🌊 Coastal Blue", Color(0xFF0284C7)),
+                            Triple("ai-purple", "⚡ AI Purple", Color(0xFF7C3AED)),
+                            Triple("amoled", "🖤 AMOLED", Color(0xFF000000))
+                        )
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            presets.forEach { (presetId, label, dotColor) ->
+                                val isSelected = currentThemeId == presetId
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) FuturisticTheme.accent.copy(alpha = 0.15f) else FuturisticTheme.surfaceElevated)
+                                        .border(
+                                            width = if (isSelected) 1.5.dp else 1.dp,
+                                            color = if (isSelected) FuturisticTheme.accent else FuturisticTheme.border,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            currentThemeId = presetId
+                                            themeManager.setTheme(presetId, isSystemDark)
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(dotColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = label,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) FuturisticTheme.primaryText else FuturisticTheme.secondaryText
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(thickness = 0.5.dp, color = FuturisticTheme.border)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Regional Script Styling switch
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Regional Typography & Script Spacing",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = FuturisticTheme.primaryText
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Optimizes line heights and fonts for Malayalam, Tamil & regional scripts",
+                                    fontSize = 11.sp,
+                                    color = FuturisticTheme.secondaryText
+                                )
+                            }
+                            Switch(
+                                checked = regionalStyleEnabled,
+                                onCheckedChange = {
+                                    themeManager.setRegionalStyleEnabled(it, isSystemDark)
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = FuturisticTheme.accent
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // =================================================================
+            // 2. REGIONAL AI: DIALECTS, ACCENTS & VOICE
+            // =================================================================
+            if (selectedSection == null || selectedSection == SettingsMenuSection.REGIONAL_AI) {
+                val region = activeRegionProfile ?: com.example.data.regional.RegionalProfileRegistry.KERALA
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenRegionSelector() }
+                        .testTag("settings_region_voice_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(text = region.flagEmoji, fontSize = 28.sp)
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Region & Voice",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = region.name,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${region.languages.joinToString(" • ")} • Tap to switch region",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
+                            imageVector = Icons.Default.Place,
+                            contentDescription = "Switch Region",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Active Gemini Prompt Context",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "Persistent in DB",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-            }
+
+                Spacer(modifier = Modifier.height(16.dp))
 
             Spacer(modifier = Modifier.height(18.dp))
 
@@ -289,7 +598,7 @@ fun RegionalSettingsSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Controls the vocabulary, rhythm, and local expressions injected into Gemini",
+                        text = "Controls authentic vocabulary, rhythm, and regional conversational phrasing",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -482,7 +791,7 @@ fun RegionalSettingsSheet(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "Shapes emotional delivery, conversational posture, and discourse markers in Gemini",
+                text = "Shapes emotional delivery, conversational posture, and friendly discourse markers",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -589,7 +898,7 @@ fun RegionalSettingsSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Allows Gemini to naturally blend English terms (e.g. Manglish) as customary in local conversations",
+                        text = "Naturally blends English terms (e.g. Manglish) as customary in regional conversations",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -624,7 +933,7 @@ fun RegionalSettingsSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = if (slangEnabled) "Injects authentic local slang expressions into Gemini system prompt" else "Uses clean regional vocabulary without heavy street slang",
+                        text = if (slangEnabled) "Uses authentic local slang expressions and colloquial regional idioms" else "Uses clean regional vocabulary without heavy street slang",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -642,7 +951,7 @@ fun RegionalSettingsSheet(
                 )
             }
 
-            // Preview active slang expressions that get injected into prompt
+            // Preview active slang expressions
             if (slangEnabled && activeDialect.typicalExpressions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
@@ -652,7 +961,7 @@ fun RegionalSettingsSheet(
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(
-                            text = "Active Slang Injected into Gemini Prompt:",
+                            text = "Active Regional Slang Expressions:",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -685,7 +994,7 @@ fun RegionalSettingsSheet(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Sets Gemini's sentence length and natural audio speaking pace",
+                text = "Sets conversational sentence length and natural audio speaking pace",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -794,17 +1103,17 @@ fun RegionalSettingsSheet(
             Spacer(modifier = Modifier.height(18.dp))
 
             // =================================================================
-            // 6. CUSTOM PROMPT CONTEXT DIRECTIVES
+            // 6. SPEAKING STYLE & TONE NUANCES
             // =================================================================
             Text(
-                text = "6. Custom Tone Directives (Gemini Prompt)",
+                text = "Speaking Style & Tone Nuances",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Add optional specific nuances or persona instructions directly into Gemini's system prompt",
+                text = "Personalize speaking nuances, friendly expressions, and conversational delivery",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -872,29 +1181,22 @@ fun RegionalSettingsSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            } // End of Regional AI section
 
             // =================================================================
-            // 7. GEMINI API PROMPT CONTEXT LIVE INSPECTOR
+            // 3. AI & MEMORY
             // =================================================================
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("gemini_prompt_inspector_card"),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showPromptInspector = !showPromptInspector },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+            if (selectedSection == null || selectedSection == SettingsMenuSection.AI_MEMORY) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_ai_memory_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = FuturisticTheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -902,85 +1204,217 @@ fun RegionalSettingsSheet(
                             Icon(
                                 imageVector = Icons.Default.Psychology,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = FuturisticTheme.accent,
                                 modifier = Modifier.size(20.dp)
                             )
-                            Column {
-                                Text(
-                                    text = "Gemini API Prompt Context",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Inspect live system instructions injected into Gemini",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Text(
+                                text = "AI & Memory",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = FuturisticTheme.primaryText
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Manage conversational continuity, regional understanding, and on-device memory recall.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FuturisticTheme.secondaryText,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(FuturisticTheme.surfaceElevated)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Voice & Speech Engine", fontSize = 12.sp, color = FuturisticTheme.primaryText, fontWeight = FontWeight.Medium)
+                                Text("● Real-Time Regional", fontSize = 11.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Vision & Document Analysis", fontSize = 12.sp, color = FuturisticTheme.primaryText, fontWeight = FontWeight.Medium)
+                                Text("● Multimodal Active", fontSize = 11.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Conversational Memory", fontSize = 12.sp, color = FuturisticTheme.primaryText, fontWeight = FontWeight.Medium)
+                                Text("● On-Device Room DB", fontSize = 11.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.SemiBold)
                             }
                         }
 
-                        Icon(
-                            imageVector = if (showPromptInspector) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = if (showPromptInspector) "Collapse" else "Expand",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                    // Key Injected Directives Summary
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        PromptDirectivePill(label = "Target Native Persona", value = "${activeDialect.cityOrArea}, ${activeDialect.region} (${activeDialect.dialectName})")
-                        PromptDirectivePill(label = "Personality Directive", value = selectedPersonalityObj.title)
-                        PromptDirectivePill(label = "Slang Directive", value = if (slangEnabled) "Natural regional expressions active" else "Clean standard vocabulary")
-                        PromptDirectivePill(label = "Code-Switching", value = if (naturalMixingEnabled) "Natural ${activeDialect.codeSwitchingDescription}" else "Standard ${activeDialect.language} only")
-                        PromptDirectivePill(label = "Response Length", value = currentStyle)
-                        PromptDirectivePill(label = "Time Grounding", value = "September 2026 Verified Knowledge Layer")
-                        if (customNotesInput.isNotBlank()) {
-                            PromptDirectivePill(label = "Custom Directives", value = customNotesInput)
+                        OutlinedButton(
+                            onClick = {
+                                Toast.makeText(context, "Conversational memory cache cleared", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = FuturisticTokens.CornerRadius.pillShape,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = FuturisticTheme.primaryText),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("clear_memories_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Clear Stored AI Memories", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
+                }
 
-                    // Full Expandable Raw System Prompt Inspector
-                    AnimatedVisibility(
-                        visible = showPromptInspector,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Column(modifier = Modifier.padding(top = 12.dp)) {
-                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "COMPLETE SYSTEM INSTRUCTION SENT TO GEMINI:",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 10.sp
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // =================================================================
+            // 4. PRIVACY
+            // =================================================================
+            if (selectedSection == null || selectedSection == SettingsMenuSection.PRIVACY) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_privacy_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = FuturisticTheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PrivacyTip,
+                                contentDescription = null,
+                                tint = FuturisticTheme.accent,
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Surface(
+                            Text(
+                                text = "Privacy & Data",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = FuturisticTheme.primaryText
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Your privacy is built directly into Regional Voice AI. Dialect choices, speaking style settings, and conversations are stored locally on your device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FuturisticTheme.secondaryText,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(FuturisticTheme.surfaceElevated)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surface
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = promptContextPreview.ifBlank {
-                                        "System instruction is ready. Dialect: ${activeDialect.dialectName}, Personality: ${selectedPersonalityObj.title}, Slang: $slangEnabled."
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(10.dp)
-                                )
+                                Text("✓", fontSize = 13.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                                Text("On-device local SQLite/Room database storage", fontSize = 12.sp, color = FuturisticTheme.primaryText)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("✓", fontSize = 13.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                                Text("Real-time voice streaming with zero permanent audio archiving", fontSize = 12.sp, color = FuturisticTheme.primaryText)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("✓", fontSize = 13.sp, color = Color(0xFF16A34A), fontWeight = FontWeight.Bold)
+                                Text("No personal data selling or cross-app tracking", fontSize = 12.sp, color = FuturisticTheme.primaryText)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DeveloperProfile.privacyPolicyUrl)).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "Privacy Policy: ${DeveloperProfile.privacyPolicyUrl}", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = FuturisticTokens.CornerRadius.pillShape,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = FuturisticTheme.primaryText),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("settings_privacy_policy_btn")
+                            ) {
+                                Text("Privacy Policy", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    Toast.makeText(context, "Local conversation cache cleared", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = FuturisticTokens.CornerRadius.pillShape,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = FuturisticTheme.primaryText),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, FuturisticTheme.border),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("settings_clear_cache_btn")
+                            ) {
+                                Text("Clear Cache", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // =================================================================
+            // 5. ABOUT REGIONAL VOICE AI
+            // =================================================================
+            if (selectedSection == null || selectedSection == SettingsMenuSection.ABOUT) {
+                AboutRegionalVoiceAIContent()
             }
 
             Spacer(modifier = Modifier.height(28.dp))

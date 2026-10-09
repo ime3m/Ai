@@ -74,20 +74,20 @@ class ThemeManager private constructor(context: Context) {
 
     fun getCurrentThemeId(): String = activeThemeId
 
-    fun setTheme(themeId: String, isSystemInDark: Boolean = true) {
+    fun setTheme(themeId: String, isSystemInDark: Boolean = false) {
         activeThemeId = themeId
         prefs.edit().putString(KEY_SELECTED_THEME, themeId).apply()
         _currentTheme.value = computeActiveTheme(isSystemInDark)
     }
 
-    fun setRegionalStyle(style: RegionalStyleDefinition, isSystemInDark: Boolean = true) {
+    fun setRegionalStyle(style: RegionalStyleDefinition, isSystemInDark: Boolean = false) {
         currentRegionalStyle = style
         _currentRegionalStyleFlow.value = style
         prefs.edit().putString(KEY_REGIONAL_CODE, style.scriptId.code).apply()
         _currentTheme.value = computeActiveTheme(isSystemInDark)
     }
 
-    fun setRegionalStyleEnabled(enabled: Boolean, isSystemInDark: Boolean = true) {
+    fun setRegionalStyleEnabled(enabled: Boolean, isSystemInDark: Boolean = false) {
         isRegionalStyleEnabled = enabled
         _regionalStyleEnabledFlow.value = enabled
         prefs.edit().putBoolean(KEY_REGIONAL_ENABLED, enabled).apply()
@@ -96,7 +96,7 @@ class ThemeManager private constructor(context: Context) {
 
     fun getCustomPalette(): CustomThemePalette = customPalette
 
-    fun applyCustomPalette(palette: CustomThemePalette, isSystemInDark: Boolean = true) {
+    fun applyCustomPalette(palette: CustomThemePalette, isSystemInDark: Boolean = false) {
         customPalette = palette
         _customPaletteFlow.value = palette
         saveCustomPalette(palette)
@@ -111,16 +111,18 @@ class ThemeManager private constructor(context: Context) {
     }
 
     fun applySystemTheme(isSystemInDark: Boolean) {
-        if (activeThemeId == "auto" || activeThemeId == "system") {
+        if (activeThemeId == "auto" || activeThemeId == "system" || activeThemeId == "system_default") {
             _currentTheme.value = computeActiveTheme(isSystemInDark)
         }
     }
 
     private fun computeActiveTheme(isSystemInDark: Boolean): ThemeDefinition {
         val baseTheme = when (activeThemeId) {
-            "auto", "system" -> SystemTheme.resolve(isSystemInDark)
+            "auto", "system", "system_default" -> SystemTheme.resolve(isSystemInDark)
+            "dark", "midnight" -> MidnightTheme.definition
+            "light" -> LightTheme.definition
             "custom" -> buildCustomTheme(customPalette)
-            else -> presetRegistry[activeThemeId] ?: LightTheme.definition
+            else -> presetRegistry[activeThemeId] ?: if (isSystemInDark) MidnightTheme.definition else LightTheme.definition
         }
 
         return if (isRegionalStyleEnabled) {

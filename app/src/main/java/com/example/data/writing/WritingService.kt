@@ -59,11 +59,7 @@ class WritingService(
     private val models = listOf("gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite-preview")
 
     private fun getApiKey(): String {
-        return try {
-            BuildConfig.GEMINI_API_KEY
-        } catch (_: Exception) {
-            ""
-        }
+        return com.example.data.ai.AIApiKeyProvider.getApiKey(context)
     }
 
     suspend fun generateWriting(

@@ -48,6 +48,10 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getString(KEY_USER_LOCATION_SOURCE, UserLocation.SOURCE_UNSPECIFIED) ?: UserLocation.SOURCE_UNSPECIFIED
         set(value) = prefs.edit().putString(KEY_USER_LOCATION_SOURCE, value).apply()
 
+    var customApiKey: String?
+        get() = prefs.getString(KEY_CUSTOM_API_KEY, null)
+        set(value) = prefs.edit().putString(KEY_CUSTOM_API_KEY, value).apply()
+
     fun getUserLocation(): UserLocation {
         return UserLocation(
             country = userLocationCountry,
@@ -71,6 +75,7 @@ class PreferencesRepository(context: Context) {
         private const val KEY_USER_LOCATION_CITY = "user_location_city"
         private const val KEY_USER_LOCATION_COUNTRY = "user_location_country"
         private const val KEY_USER_LOCATION_SOURCE = "user_location_source"
+        private const val KEY_CUSTOM_API_KEY = "custom_gemini_api_key"
 
         const val DEFAULT_REGION_ID = "kerala"
         const val DEFAULT_LANGUAGE = "ml"

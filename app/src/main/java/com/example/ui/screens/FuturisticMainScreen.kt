@@ -25,15 +25,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -111,6 +115,7 @@ import com.example.ui.VoiceViewModel
 import com.example.ui.components.CompactVoiceWaveBar
 import com.example.ui.components.ExplainSlangDialog
 import com.example.ui.components.HierarchicalDialectDrillDownModal
+import com.example.ui.components.PersistentDialectAccentSelector
 import com.example.ui.components.RealTimeKnowledgeSheet
 import com.example.ui.components.RegionalSettingsSheet
 import com.example.ui.components.VoiceDiagnosticSheet
@@ -118,6 +123,7 @@ import com.example.ui.components.image.AttachmentOptionButton
 import com.example.ui.components.image.DocumentAttachmentPreviewChip
 import com.example.ui.components.image.GeneratedImageMessageCard
 import com.example.ui.components.image.ImageAttachmentPreviewChip
+import com.example.ui.components.image.ImageGenerationErrorCard
 import com.example.ui.components.futuristic.AppHeader
 import com.example.ui.components.futuristic.CategoryPill
 import com.example.ui.components.futuristic.FuturisticCategory
@@ -273,7 +279,6 @@ fun FuturisticMainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding()
         ) {
             // -------------------------------------------------------------
             // 1. MINIMAL LIGHTWEIGHT APP HEADER
@@ -300,6 +305,7 @@ fun FuturisticMainScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
             ) {
                 AnimatedContent(
                     targetState = selectedCategory,
@@ -504,9 +510,7 @@ private fun VoiceHeroContent(
     val chatSuggestions by viewModel.chatSuggestions.collectAsState()
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
+        modifier = Modifier.fillMaxSize()
     ) {
         // 1. CLEAN HOME SCREEN: Minimal, spacious, uncluttered start screen
         CleanHomeScreen(
@@ -519,7 +523,8 @@ private fun VoiceHeroContent(
             isMuted = isMuted,
             partialTranscript = partialTranscript,
             hasActiveConversation = messages.isNotEmpty() || !streamingAiText.isNullOrBlank(),
-            onOpenChat = { viewModel.openChatWindow() }
+            onOpenChat = { viewModel.openChatWindow() },
+            onOpenDialects = onOpenDialects
         )
 
         // 2. FLOATING CHAT WINDOW / PANEL: Modern AI Assistant floating card above Home screen
@@ -548,7 +553,8 @@ private fun VoiceHeroContent(
                 chatSuggestions = chatSuggestions,
                 isMuted = isMuted,
                 onClose = { viewModel.closeChatWindow() },
-                onNewChat = { viewModel.startNewConversation() }
+                onNewChat = { viewModel.startNewConversation() },
+                onOpenDialects = onOpenDialects
             )
         }
     }
@@ -563,6 +569,7 @@ private fun VoiceHeroContent(
  * - Subtitle (എന്താണ് അറിയേണ്ടത്?)
  * - 3–4 compact contextual suggestion chips
  * Bottom shows:
+ * - Persistent dialect / accent selector
  * - Main floating AI input bar: [ Ask anything...  🎙️ ➤ ]
  */
 @Composable
@@ -576,7 +583,8 @@ private fun CleanHomeScreen(
     isMuted: Boolean,
     partialTranscript: String,
     hasActiveConversation: Boolean,
-    onOpenChat: () -> Unit
+    onOpenChat: () -> Unit,
+    onOpenDialects: () -> Unit = {}
 ) {
     var textInput by remember { mutableStateOf("") }
     val greeting = remember(currentDialect.language) {
@@ -624,6 +632,9 @@ private fun CleanHomeScreen(
         }
     }
 
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val isImeVisible = WindowInsets.ime.getBottom(density) > 0
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -637,7 +648,7 @@ private fun CleanHomeScreen(
                 .align(Alignment.Center)
                 .fillMaxWidth()
                 .widthIn(max = 500.dp)
-                .padding(bottom = 80.dp),
+                .padding(bottom = if (isImeVisible) 16.dp else 80.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -764,13 +775,14 @@ private fun CleanHomeScreen(
         // =========================================================
         val attachedImageUri by viewModel.attachedImageUri.collectAsState()
         val attachedDoc by viewModel.attachedDocument.collectAsState()
+        val isImageGenerating by viewModel.isImageGenerating.collectAsState()
 
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .widthIn(max = 560.dp)
-                .padding(bottom = 12.dp)
+                .padding(bottom = if (isImeVisible) 4.dp else 12.dp)
         ) {
             // Attached Image Preview chip if selected
             ImageAttachmentPreviewChip(
@@ -827,6 +839,18 @@ private fun CleanHomeScreen(
                 }
             }
 
+            // =================================================================
+            // PERSISTENT REGIONAL DIALECT / ACCENT SELECTOR (Before voice session)
+            // =================================================================
+            PersistentDialectAccentSelector(
+                selectedDialect = currentDialect,
+                onSelectDialect = { dialect -> viewModel.selectDialect(dialect) },
+                onOpenFullDialectPicker = { onOpenDialects() },
+                onAuditionVoice = { text -> viewModel.speakText(text) },
+                isCompact = isImeVisible,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
             // Main Floating AI Input Bar
             Box(
                 modifier = Modifier
@@ -873,7 +897,7 @@ private fun CleanHomeScreen(
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = {
-                            if ((textInput.isNotBlank() || !attachedImageUri.isNullOrBlank() || attachedDoc != null) && !isAiThinking) {
+                            if ((textInput.isNotBlank() || !attachedImageUri.isNullOrBlank() || attachedDoc != null) && !isAiThinking && !isImageGenerating) {
                                 val prompt = if (textInput.isNotBlank()) textInput
                                 else if (attachedDoc != null) "Summarize this document"
                                 else "Explain this image"
@@ -906,7 +930,7 @@ private fun CleanHomeScreen(
                     Spacer(modifier = Modifier.width(4.dp))
 
                     // Send Button (➤)
-                    val canSend = (textInput.isNotBlank() || !attachedImageUri.isNullOrBlank() || attachedDoc != null) && !isAiThinking
+                    val canSend = (textInput.isNotBlank() || !attachedImageUri.isNullOrBlank() || attachedDoc != null) && !isAiThinking && !isImageGenerating
                     IconButton(
                         onClick = {
                             if (canSend) {
@@ -965,7 +989,8 @@ private fun FloatingChatWindow(
     chatSuggestions: List<String>,
     isMuted: Boolean,
     onClose: () -> Unit,
-    onNewChat: () -> Unit
+    onNewChat: () -> Unit,
+    onOpenDialects: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -976,11 +1001,12 @@ private fun FloatingChatWindow(
     val attachedDoc by viewModel.attachedDocument.collectAsState()
     val isImageGenerating by viewModel.isImageGenerating.collectAsState()
     val imageLoadingMessage by viewModel.imageLoadingMessage.collectAsState()
+    val lastImageError by viewModel.lastImageError.collectAsState()
 
     val isVoiceActive = voiceState == VoiceState.LISTENING || voiceState == VoiceState.SPEAKING || isAiThinking || isImageGenerating
 
-    LaunchedEffect(messages.size, isAiThinking, partialTranscript, streamingAiText, isImageGenerating) {
-        val totalItems = messages.size + (if (isAiThinking || !streamingAiText.isNullOrBlank() || isImageGenerating) 1 else 0)
+    LaunchedEffect(messages.size, isAiThinking, partialTranscript, streamingAiText, isImageGenerating, lastImageError) {
+        val totalItems = messages.size + (if (isAiThinking || !streamingAiText.isNullOrBlank() || isImageGenerating || lastImageError != null) 1 else 0)
         if (totalItems > 0) {
             listState.animateScrollToItem(totalItems - 1)
         }
@@ -1459,15 +1485,26 @@ private fun FloatingChatWindow(
                             }
                         }
 
-                        // Error Banner with Retry
-                        if (requestError != null) {
+                        // Dedicated Image Generation Error Card (Section 7)
+                        if (lastImageError != null) {
+                            item(key = "image_generation_error") {
+                                ImageGenerationErrorCard(
+                                    errorInfo = lastImageError!!,
+                                    isRetrying = isImageGenerating,
+                                    onRetry = { viewModel.retryImageGeneration() },
+                                    onDismiss = { viewModel.dismissImageError() },
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                        } else if (requestError != null) {
+                            // General Text/Audio Error Banner with Retry
                             item(key = "ai_request_error") {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(FuturisticTokens.CornerRadius.smallShape)
-                                        .background(Color(0xFFFEF2F2))
-                                        .border(1.dp, Color(0xFFFCA5A5), FuturisticTokens.CornerRadius.smallShape)
+                                        .background(FuturisticTheme.surfaceElevated)
+                                        .border(1.dp, FuturisticTheme.error.copy(alpha = 0.5f), FuturisticTokens.CornerRadius.smallShape)
                                         .padding(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     Row(
@@ -1477,7 +1514,7 @@ private fun FloatingChatWindow(
                                     ) {
                                         Text(
                                             text = requestError ?: "Error occurred",
-                                            color = Color(0xFF991B1B),
+                                            color = FuturisticTheme.error,
                                             fontSize = 12.sp,
                                             modifier = Modifier.weight(1f)
                                         )
@@ -1485,11 +1522,11 @@ private fun FloatingChatWindow(
                                         Box(
                                             modifier = Modifier
                                                 .clip(FuturisticTokens.CornerRadius.pillShape)
-                                                .background(Color(0xFFDC2626))
-                                                .clickable(enabled = !isAiThinking) {
+                                                .background(FuturisticTheme.accent)
+                                                .clickable(enabled = !isAiThinking && !isImageGenerating) {
                                                     viewModel.retryLastFailedMessage()
                                                 }
-                                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
                                         ) {
                                             Text(
                                                 text = "Retry",
@@ -1623,6 +1660,16 @@ private fun FloatingChatWindow(
                     ImageAttachmentPreviewChip(
                         attachedImageUri = attachedImageUri,
                         onRemove = { viewModel.clearAttachedImage() }
+                    )
+
+                    // Persistent Dialect & Accent selector pill inside Chat composer
+                    PersistentDialectAccentSelector(
+                        selectedDialect = currentDialect,
+                        onSelectDialect = { dialect -> viewModel.selectDialect(dialect) },
+                        onOpenFullDialectPicker = { onOpenDialects() },
+                        onAuditionVoice = { text -> viewModel.speakText(text) },
+                        isCompact = true,
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
 
                     Row(
@@ -2407,9 +2454,7 @@ private fun FuturisticConversationContent(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
+        modifier = Modifier.fillMaxSize()
     ) {
         // Message thread
         LazyColumn(

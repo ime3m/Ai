@@ -1,5 +1,6 @@
 package com.example.data.remote
 
+import android.content.Context
 import android.util.Log
 import com.example.BuildConfig
 import com.example.data.knowledge.RealTimeKnowledgeEngine
@@ -34,7 +35,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class GeminiVoiceService {
+class GeminiVoiceService(private val context: Context? = null) {
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -79,9 +80,10 @@ class GeminiVoiceService {
         val models = getAvailableModels()
         for (model in models) {
             try {
-                val url = "${getModelUrl(model, streaming = true)}&key=$apiKey"
+                val url = getModelUrl(model, streaming = true)
                 val request = Request.Builder()
                     .url(url)
+                    .addHeader("x-goog-api-key", apiKey)
                     .post(requestJson.toString().toRequestBody(jsonMediaType))
                     .build()
 
@@ -146,7 +148,8 @@ class GeminiVoiceService {
         for (model in models) {
             try {
                 val request = Request.Builder()
-                    .url("${getModelUrl(model)}?key=$apiKey")
+                    .url(getModelUrl(model))
+                    .addHeader("x-goog-api-key", apiKey)
                     .post(requestJson.toString().toRequestBody(jsonMediaType))
                     .build()
 
@@ -171,11 +174,7 @@ class GeminiVoiceService {
     val latestTrace: StateFlow<AiResponseTrace?> = _latestTrace.asStateFlow()
 
     private fun getApiKey(): String {
-        return try {
-            BuildConfig.GEMINI_API_KEY
-        } catch (_: Exception) {
-            ""
-        }
+        return com.example.data.ai.AIApiKeyProvider.getApiKey(context)
     }
 
     suspend fun transcribeAudio(
@@ -540,7 +539,8 @@ class GeminiVoiceService {
                 val modelsToTry = getAvailableModels()
                 for (model in modelsToTry) {
                     val request = Request.Builder()
-                        .url("${getModelUrl(model)}?key=$apiKey")
+                        .url(getModelUrl(model))
+                        .addHeader("x-goog-api-key", apiKey)
                         .post(requestJson.toString().toRequestBody(jsonMediaType))
                         .build()
 

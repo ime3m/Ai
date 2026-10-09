@@ -150,7 +150,7 @@ fun ProfileScreen(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "Target Dialect & Prompt Settings",
+                            text = "Target Dialect & Regional Settings",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -162,7 +162,7 @@ fun ProfileScreen(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            text = "Gemini API Active",
+                            text = "Regional AI Active",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontSize = 10.sp,
@@ -174,7 +174,7 @@ fun ProfileScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Select your target regional dialect or language style to influence Gemini API prompt context and real-time responses.",
+                    text = "Select your target regional dialect and speaking style for authentic real-time voice and conversational responses.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

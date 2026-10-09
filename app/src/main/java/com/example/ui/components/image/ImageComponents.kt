@@ -631,3 +631,157 @@ fun GeneratedImageMessageCard(
         }
     }
 }
+
+/**
+ * Dedicated Card for Image Generation Failure / Quota Limit (Section 7).
+ * Displays a clean, user-friendly explanation with an optional technical detail expander
+ * and a direct [Retry] button.
+ */
+@Composable
+fun ImageGenerationErrorCard(
+    errorInfo: com.example.ui.ImageErrorInfo,
+    isRetrying: Boolean = false,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    var showDetails by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(FuturisticTheme.surfaceElevated)
+            .border(1.dp, FuturisticTheme.border, RoundedCornerShape(16.dp))
+            .padding(14.dp)
+            .testTag("image_generation_error_card")
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(FuturisticTheme.accent.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = FuturisticTheme.accent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = errorInfo.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = FuturisticTheme.primaryText
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = FuturisticTheme.tertiaryText,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = errorInfo.description,
+                fontSize = 12.sp,
+                color = FuturisticTheme.secondaryText,
+                lineHeight = 18.sp
+            )
+
+            if (!errorInfo.technicalDetails.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { showDetails = !showDetails }
+                        .padding(vertical = 2.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (showDetails) "Hide technical details ▲" else "Technical details ▾",
+                        fontSize = 11.sp,
+                        color = FuturisticTheme.accent,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                if (showDetails) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(FuturisticTheme.surface)
+                            .border(0.5.dp, FuturisticTheme.border, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = errorInfo.technicalDetails,
+                            fontSize = 11.sp,
+                            color = FuturisticTheme.secondaryText,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+
+            if (errorInfo.canRetry) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Button(
+                        onClick = onRetry,
+                        enabled = !isRetrying,
+                        shape = FuturisticTokens.CornerRadius.pillShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FuturisticTheme.accent,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("btn_retry_image_generation")
+                    ) {
+                        if (isRetrying) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Retrying...", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Retry", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

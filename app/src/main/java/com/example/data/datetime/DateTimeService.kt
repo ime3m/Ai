@@ -185,4 +185,26 @@ object DateTimeService {
             ""
         }
     }
+
+    /**
+     * Formats a timestamp into date string in Malayalam or English with time.
+     */
+    fun formatDateMalayalamOrEnglish(timestamp: Long, isMalayalam: Boolean = false): String {
+        if (timestamp <= 0L) return ""
+        return try {
+            val instant = java.time.Instant.ofEpochMilli(timestamp)
+            val zonedDateTime = instant.atZone(ZoneId.systemDefault())
+            val localDate = zonedDateTime.toLocalDate()
+            if (isMalayalam) {
+                val dateStr = formatDateMalayalam(localDate)
+                val timeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+                "$dateStr, ${zonedDateTime.format(timeFormatter)}"
+            } else {
+                val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy • h:mm a", Locale.US)
+                zonedDateTime.format(formatter)
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
 }
