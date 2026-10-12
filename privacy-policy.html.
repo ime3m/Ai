@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Privacy Policy | Regional Voice AI</title>
+
+    <meta name="description"
+          content="Privacy Policy for the Regional Voice AI Android application.">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.7;
+            margin: 0;
+            padding: 24px;
+            background: #f5f7fb;
+            color: #202124;
+        }
+
+        main {
+            max-width: 850px;
+            margin: auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+        }
+
+        h1, h2 {
+            color: #155eef;
+        }
+
+        h1 {
+            line-height: 1.3;
+        }
+
+        a {
+            color: #155eef;
+        }
+
+        footer {
+            margin-top: 35px;
+            border-top: 1px solid #ddd;
+            padding-top: 18px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+<main>
+
+    <h1>Privacy Policy</h1>
+
+    <p><strong>Application:</strong> Regional Voice AI</p>
+    <p><strong>Developer:</strong> SHAMEEM KM</p>
+    <p><strong>Effective date:</strong> October 12, 2026</p>
+
+    <h2>1. Introduction</h2>
+
+    <p>
+        Welcome to Regional Voice AI. Your privacy is important to us.
+        This Privacy Policy explains how information may be collected,
+        processed, used, stored, and shared when you use our application.
+    </p>
+
+    <p>
+        Regional Voice AI provides AI-powered conversations, voice
+        interaction, text input, speech recognition, text-to-speech,
+        and regional language and dialect features.
+    </p>
+
+    <h2>2. Information We May Process</h2>
+
+    <p>Depending on the features you use and how the application is implemented,
+    the following information may be processed:</p>
+
+    <ul>
+        <li>
+            <strong>Text and conversations:</strong>
+            Questions, messages, AI responses, and conversation history.
+        </li>
+
+        <li>
+            <strong>Voice information:</strong>
+            Audio captured when you use voice input, along with speech
+            recognition results or transcripts.
+        </li>
+
+        <li>
+            <strong>Language preferences:</strong>
+            Your selected language, regional dialect, accent preferences,
+            and other personalization settings.
+        </li>
+
+        <li>
+            <strong>Technical information:</strong>
+            Information necessary to operate the application, diagnose
+            errors, maintain security, and improve reliability.
+        </li>
+
+        <li>
+            <strong>Location information:</strong>
+            Location information only if a location-related feature
+            requests or otherwise processes it.
+        </li>
+    </ul>
+
+    <p>
+        The information actually collected depends on the features enabled
+        in the released version of the application.
+    </p>
+
+    <h2>3. Microphone and Voice Processing</h2>
+
+    <p>
+        Regional Voice AI may request microphone permission when you choose
+        to interact with the application using your voice.
+    </p>
+
+    <p>
+        Audio may be processed to recognize speech, generate an AI response,
+        and provide spoken output. Depending on the speech recognition and
+        AI services used, audio or transcripts may be transmitted to
+        external service providers for processing.
+    </p>
+
+    <p>
+        Microphone access should be used only for the features that require
+        it. Whether audio is temporarily processed, stored, or retained
+        depends on the application's implementation and the services used.
+    </p>
+
+    <h2>4. How We Use Information</h2>
+
+    <p>Information may be used for the following purposes:</p>
+
+    <ul>
+        <li>To answer questions and generate AI responses.</li>
+        <li>To provide voice input and spoken responses.</li>
+        <li>To support regional languages, dialects, and slang.</li>
+        <li>To maintain conversation history when this feature is enabled.</li>
+        <li>To remember preferences when a supported personalization
+            feature is enabled.</li>
+        <li>To maintain application security and troubleshoot errors.</li>
+    </ul>
+
+    <h2>5. AI and Third-Party Services</h2>
+
+    <p>
+        Some features may rely on third-party AI models, speech recognition
+        services, text-to-speech providers, hosting services, or other
+        technical service providers.
+    </p>
+
+    <p>
+        When such services are used, information necessary to provide the
+        requested feature may be sent to those providers and processed
+        according to their applicable terms and privacy policies.
+    </p>
+
+    <p>
+        Third-party providers may have their own data retention and
+        processing practices. Users should review the applicable policies
+        of the providers actually integrated into the application.
+    </p>
+
+    <h2>6. Data Storage and Retention</h2>
+
+    <p>
+        Conversation history, preferences, and other information may be
+        stored locally on your device or on external servers, depending
+        on the features and storage systems used by the application.
+    </p>
+
+    <p>
+        Information is retained only according to the application's actual
+        storage configuration and applicable service-provider policies.
+        Before publishing this policy, the developer must specify where
+        conversations and preferences are stored, how long they are kept,
+        and how users can delete them.
+    </p>
+
+    <h2>7. Data Sharing</h2>
+
+    <p>
+        Information may be shared with service providers when necessary
+        to operate AI conversations, voice processing, hosting, or other
+        features you request.
+    </p>
+
+    <p>
+        The application should not share personal information for purposes
+        unrelated to its disclosed functionality without an appropriate
+        legal basis or consent where required.
+    </p>
+
+    <h2>8. Data Security</h2>
+
+    <p>
+        Reasonable technical and organizational measures should be used
+        to protect information handled by the application. However,
+        no method of electronic storage or internet transmission can
+        be guaranteed to be completely secure.
+    </p>
+
+    <h2>9. Your Choices and Data Deletion</h2>
+
+    <p>
+        You can control permissions through your Android device settings.
+        You may also be able to clear locally stored application data
+        through Android settings.
+    </p>
+
+    <p>
+        Clearing application data on your device may not delete information
+        already stored on external servers or by third-party providers.
+        Any server-side deletion process must be described and made
+        available according to the application's actual capabilities.
+    </p>
+
+    <h2>10. Children's Privacy</h2>
+
+    <p>
+        The application is not intended to collect children's personal
+        information in violation of applicable privacy laws.
+        If you believe a child has provided personal information in a way
+        that violates applicable requirements, contact the developer.
+    </p>
+
+    <h2>11. Changes to This Policy</h2>
+
+    <p>
+        This Privacy Policy may be updated when application features,
+        data practices, or legal requirements change. The updated policy
+        will be published on this page with a revised effective date.
+    </p>
+
+    <h2>12. Contact Information</h2>
+
+    <p>
+        For questions about this Privacy Policy or requests concerning
+        your information, contact the application developer.
+    </p>
+
+    <p><strong>Developer:</strong> SHAMEEM KM</p>
+
+    <p>
+        <strong>Email:</strong>
+        REPLACE_WITH_YOUR_CONTACT_EMAIL
+    </p>
+
+    <p>
+        <strong>Instagram:</strong>
+        <a href="https://www.instagram.com/ime3m/"
+           target="_blank" rel="noopener noreferrer">@ime3m</a>
+    </p>
+
+    <footer>
+        &copy; 2026 SHAMEEM KM. All rights reserved.
+    </footer>
+
+</main>
+</body>
+</html>
